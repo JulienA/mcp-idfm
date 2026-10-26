@@ -6,11 +6,15 @@
 
 **Status:** ready-for-agent
 
-- [ ] `prochain_passage` requires a Zone d'arrêt query; Ligne is optional and filters after resolution
-- [ ] Live SIRI unitaire via `MonitoringRef` of the Zone d'arrêt; not cached; no `/stop_schedules` or `/departures` fallback
-- [ ] At most 5 passages, grouped by Ligne + destination; cancelled (and other Statut de passage values from the feed) remain visible
-- [ ] No SIRI realtime for a resolved Zone d'arrêt → successful outcome stating the absence, not an MCP error and not theoretical times
-- [ ] 0 / 1 / 2–5 union / >5 clarification follow ticket 02; union of zones still respects the cap of 5
-- [ ] SIRI failure with no usable payload → MCP error for that call (no stale passages)
-- [ ] Tests use a fake SIRI adapter; production is PRIM stop-monitoring
-- [ ] French strings, ISO datetimes Europe/Paris, `source: "Île-de-France Mobilités"`
+- [x] `prochain_passage` requires a Zone d'arrêt query; Ligne is optional and filters after resolution
+- [x] Live SIRI unitaire via `MonitoringRef` of the Zone d'arrêt; not cached; no `/stop_schedules` or `/departures` fallback
+- [x] At most 5 passages, grouped by Ligne + destination; cancelled (and other Statut de passage values from the feed) remain visible
+- [x] No SIRI realtime for a resolved Zone d'arrêt → successful outcome stating the absence, not an MCP error and not theoretical times
+- [x] 0 / 1 / 2–5 union / >5 clarification follow ticket 02; union of zones still respects the cap of 5
+- [x] SIRI failure with no usable payload → MCP error for that call (no stale passages)
+- [x] Tests use a fake SIRI adapter; production is PRIM stop-monitoring
+- [x] French strings, ISO datetimes Europe/Paris, `source: "Île-de-France Mobilités"`
+
+## Comments
+
+Implemented on `feat/mcp-idfm-v1` (`be76a7a`).

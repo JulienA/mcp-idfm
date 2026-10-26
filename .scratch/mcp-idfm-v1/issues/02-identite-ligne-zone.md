@@ -12,3 +12,7 @@
 - [x] Lookup is cached 24h (referential cache, not the Info Trafic snapshot)
 - [x] Tests drive the application module with a fake Navitia lookup; production uses `/pt_objects` (Ligne) and `/places` (Zone d'arrêt)
 - [x] Tool descriptions and user-facing strings are French; payloads include `source: "Île-de-France Mobilités"`
+
+## Comments
+
+Implemented on `feat/mcp-idfm-v1` (`be76a7a`).

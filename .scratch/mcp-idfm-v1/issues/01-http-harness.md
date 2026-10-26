@@ -6,8 +6,12 @@
 
 **Status:** ready-for-agent
 
-- [ ] Missing `PRIM_API_KEY` causes a non-zero exit at boot
-- [ ] With a key, the server binds `0.0.0.0` and serves Streamable HTTP on `POST /mcp`
-- [ ] Origin present and not matching `HOST` is rejected; missing Origin is allowed
-- [ ] `GET /health` returns `{ ok, trafic_updated_at, stale }` (snapshot fields may be empty/null until ticket 03)
-- [ ] Application-seam tests cover fail-fast and health; HTTP is not the product test surface
+- [x] Missing `PRIM_API_KEY` causes a non-zero exit at boot
+- [x] With a key, the server binds `0.0.0.0` and serves Streamable HTTP on `POST /mcp`
+- [x] Origin present and not matching `HOST` is rejected; missing Origin is allowed
+- [x] `GET /health` returns `{ ok, trafic_updated_at, stale }` (snapshot fields may be empty/null until ticket 03)
+- [x] Application-seam tests cover fail-fast and health; HTTP is not the product test surface
+
+## Comments
+
+Implemented on `feat/mcp-idfm-v1` (`be76a7a`).

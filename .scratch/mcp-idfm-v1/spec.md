@@ -2,6 +2,8 @@
 
 Status: ready-for-agent
 
+Implemented on `feat/mcp-idfm-v1` (`be76a7a`).
+
 ## Problem Statement
 
 An MCP caller (Cursor, Claude, or another HTTP client) needs Île-de-France traffic messages and next departures from natural language or mixed identifiers (“RER B”, “Metro 1”, a `Cxxxxx`, a SIRI ref). Today that means knowing PRIM, picking among Navitia and SIRI products, handling quotas, and resolving ambiguous names. The caller must not log into PRIM.
