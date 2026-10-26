@@ -310,6 +310,17 @@ describe("get_line_id", () => {
       source: "Île-de-France Mobilités",
     });
   });
+
+  it("returns every matching Ligne as a candidate instead of truncating to the cap", async () => {
+    const fiches = numberedBusLignes(20);
+    const app = createApplication({ lookup: fakeLookup(fiches) });
+    const result = await app.getLineId("Bus");
+    expect(result).toEqual({
+      status: "needs_clarification",
+      candidates: fiches.map(({ id, label, mode }) => ({ id, label, mode })),
+      source: "Île-de-France Mobilités",
+    });
+  });
 });
 
 describe("get_stop_id", () => {
@@ -491,6 +502,17 @@ describe("get_stop_id", () => {
 
   it("asks for clarification when more than five Zones d'arrêt match", async () => {
     const stops = numberedStops(6);
+    const app = createApplication({ lookup: fakeLookup([], stops) });
+    const result = await app.getStopId("Nation");
+    expect(result).toEqual({
+      status: "needs_clarification",
+      candidates: stops.map(({ id, label, mode }) => ({ id, label, mode })),
+      source: "Île-de-France Mobilités",
+    });
+  });
+
+  it("returns every matching Zone d'arrêt as a candidate instead of truncating to the cap", async () => {
+    const stops = numberedStops(20);
     const app = createApplication({ lookup: fakeLookup([], stops) });
     const result = await app.getStopId("Nation");
     expect(result).toEqual({

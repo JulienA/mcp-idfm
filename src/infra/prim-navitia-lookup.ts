@@ -11,6 +11,26 @@ import { primRequest } from "./prim-fetch.js";
 const PRIM_NAVITIA_BASE =
   "https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia";
 
+const PT_OBJECTS_PAGE_SIZE = 1000;
+const PLACES_PAGE_SIZE = 200;
+const MAX_SEARCH_PAGES = 20;
+
+type NavitiaPagination = {
+  items_per_page?: number;
+  total_result?: number;
+};
+
+function paginationOf(body: unknown): NavitiaPagination {
+  const pagination = (body as { pagination?: NavitiaPagination }).pagination;
+  return pagination ?? {};
+}
+
+function positiveInt(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined;
+}
+
 type PrimNavitiaLookupOptions = {
   apiKey: string;
   fetch?: typeof fetch;
@@ -72,6 +92,14 @@ function toZoneDarret(stopArea: NavitiaStopArea): ZoneDarret | undefined {
   };
 }
 
+function collectStops(body: unknown): ZoneDarret[] {
+  const places = (body as { places?: NavitiaPlace[] } | undefined)?.places ?? [];
+  return places
+    .filter((place) => place.embedded_type === "stop_area" && place.stop_area)
+    .map((place) => toZoneDarret(place.stop_area!))
+    .filter((stop): stop is ZoneDarret => stop !== undefined);
+}
+
 function isCanonicalStopId(query: string): boolean {
   return /^\d+$/.test(query);
 }
@@ -100,15 +128,47 @@ export function createPrimNavitiaLookup(
     return response.json();
   }
 
-  async function searchJson(path: string, query: string): Promise<unknown> {
+  async function searchPage(
+    path: string,
+    query: string,
+    startPage: number,
+  ): Promise<unknown> {
     const url = new URL(`${PRIM_NAVITIA_BASE}${path}`);
     url.searchParams.set("q", query);
+    url.searchParams.set(
+      "count",
+      String(path === "/places" ? PLACES_PAGE_SIZE : PT_OBJECTS_PAGE_SIZE),
+    );
     if (path === "/pt_objects") {
       url.searchParams.append("type[]", "line");
     } else {
       url.searchParams.append("type[]", "stop_area");
     }
+    if (startPage > 0) {
+      url.searchParams.set("start_page", String(startPage));
+    }
     return (await requestJson(url)) ?? {};
+  }
+
+  async function searchAllPages<T>(
+    path: string,
+    query: string,
+    collect: (body: unknown) => T[],
+  ): Promise<T[]> {
+    const first = await searchPage(path, query, 0);
+    const pages = [first];
+    const firstItems = collect(first);
+    const pagination = paginationOf(first);
+    const total = positiveInt(pagination.total_result) ?? firstItems.length;
+    const pageSize =
+      positiveInt(pagination.items_per_page) ?? firstItems.length;
+    if (pageSize > 0 && total > pageSize) {
+      const pageCount = Math.min(Math.ceil(total / pageSize), MAX_SEARCH_PAGES);
+      for (let page = 1; page < pageCount; page += 1) {
+        pages.push(await searchPage(path, query, page));
+      }
+    }
+    return pages.flatMap(collect);
   }
 
   async function resourceJson(path: string): Promise<unknown | undefined> {
@@ -126,29 +186,26 @@ export function createPrimNavitiaLookup(
           .map(toLigne)
           .filter((ligne): ligne is Ligne => ligne !== undefined);
       } else {
-        const body = (await searchJson("/pt_objects", query)) as {
-          pt_objects?: NavitiaPtObject[];
-        };
-        matches = (body.pt_objects ?? [])
-          .filter((object) => object.embedded_type === "line" && object.line)
-          .map((object) => toLigne(object.line!))
-          .filter((ligne): ligne is Ligne => ligne !== undefined);
+        matches = await searchAllPages("/pt_objects", query, (body) => {
+          const objects =
+            (body as { pt_objects?: NavitiaPtObject[] }).pt_objects ?? [];
+          return objects
+            .filter((object) => object.embedded_type === "line" && object.line)
+            .map((object) => toLigne(object.line!))
+            .filter((ligne): ligne is Ligne => ligne !== undefined);
+        });
       }
       log.info({ query, matches: matches.length }, "PRIM Navitia line lookup");
       return matches;
     },
     async searchStops(query) {
-      const body = (
-        isCanonicalStopId(query)
-          ? await resourceJson(
+      const matches = isCanonicalStopId(query)
+        ? collectStops(
+            await resourceJson(
               `/places/${encodeURIComponent(`stop_area:IDFM:${query}`)}`,
-            )
-          : await searchJson("/places", query)
-      ) as { places?: NavitiaPlace[] } | undefined;
-      const matches = (body?.places ?? [])
-        .filter((place) => place.embedded_type === "stop_area" && place.stop_area)
-        .map((place) => toZoneDarret(place.stop_area!))
-        .filter((stop): stop is ZoneDarret => stop !== undefined);
+            ),
+          )
+        : await searchAllPages("/places", query, collectStops);
       log.info({ query, matches: matches.length }, "PRIM Navitia stop lookup");
       return matches;
     },

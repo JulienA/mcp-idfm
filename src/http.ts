@@ -102,6 +102,7 @@ const MCP_INSTRUCTIONS = [
   'Prochains passages, horaires, temps d\'attente : appelle prochain_passage. Passe le nom de l\'arrêt dans query (ex. "Châtelet") et la Ligne dans ligne si elle est connue (ex. "RER A"). N\'appelle pas get_stop_id avant.',
   'Perturbations, incident, travaux, Info Trafic : appelle get_info_trafic avec le nom de la Ligne (ex. "RER A"). N\'appelle pas get_line_id avant.',
   "get_line_id et get_stop_id servent seulement à afficher un identifiant canonique.",
+  "Si un outil répond needs_clarification, présente tous les candidats (id, label, mode) à l'utilisateur, sans en omettre.",
 ].join(" ");
 
 const TOOL_ANNOTATIONS = {

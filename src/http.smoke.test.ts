@@ -65,6 +65,7 @@ describe("http adapter", () => {
     expect(body).toContain("prochain_passage");
     expect(body).toContain("Châtelet");
     expect(body).toContain("RER A");
+    expect(body).toContain("needs_clarification");
   });
 
   it("lists identity, Info Trafic and Prochain Passage tools with French descriptions", async () => {
