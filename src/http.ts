@@ -97,6 +97,18 @@ async function toolResult(
   }
 }
 
+const MCP_INSTRUCTIONS = [
+  "Serveur Île-de-France Mobilités. Pour toute question sur les horaires, les Prochains Passages, le trafic, une Ligne ou un arrêt du réseau IDFM, tu dois appeler un outil. N'invente jamais un horaire ni une perturbation.",
+  'Prochains passages, horaires, temps d\'attente : appelle prochain_passage. Passe le nom de l\'arrêt dans query (ex. "Châtelet") et la Ligne dans ligne si elle est connue (ex. "RER A"). N\'appelle pas get_stop_id avant.',
+  'Perturbations, incident, travaux, Info Trafic : appelle get_info_trafic avec le nom de la Ligne (ex. "RER A"). N\'appelle pas get_line_id avant.',
+  "get_line_id et get_stop_id servent seulement à afficher un identifiant canonique.",
+].join(" ");
+
+const TOOL_ANNOTATIONS = {
+  readOnlyHint: true,
+  openWorldHint: true,
+} as const;
+
 function registerTools(
   mcpServer: McpServer,
   app: Application,
@@ -105,14 +117,17 @@ function registerTools(
   mcpServer.registerTool(
     "get_line_id",
     {
+      title: "Identifiant de Ligne",
       description:
-        "Résout une Ligne à partir d'un nom ou d'un identifiant (texte, code Cxxxxx, identifiant Navitia ou référence SIRI).",
+        "Résout une Ligne IDFM en fiche canonique (id Cxxxxx, label, mode). Utile pour afficher l'identifiant. Inutile avant get_info_trafic ou prochain_passage, qui acceptent déjà un nom (ex. RER A, Métro 1, C01742).",
+      annotations: TOOL_ANNOTATIONS,
       inputSchema: fromJsonSchema<{ query: string }>({
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "Nom ou identifiant de la Ligne",
+            description:
+              'Nom ou identifiant de la Ligne (ex. "RER A", "Métro 1", "C01742")',
           },
         },
         required: ["query"],
@@ -125,14 +140,17 @@ function registerTools(
   mcpServer.registerTool(
     "get_stop_id",
     {
+      title: "Identifiant de Zone d'arrêt",
       description:
-        "Résout une Zone d'arrêt à partir d'un nom ou d'un identifiant (texte, identifiant Navitia ou MonitoringRef SIRI).",
+        "Résout une Zone d'arrêt IDFM en fiche canonique. Utile pour afficher l'identifiant. Inutile avant prochain_passage, qui accepte déjà un nom d'arrêt (ex. Châtelet).",
+      annotations: TOOL_ANNOTATIONS,
       inputSchema: fromJsonSchema<{ query: string }>({
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "Nom ou identifiant de la Zone d'arrêt",
+            description:
+              'Nom ou identifiant de la Zone d\'arrêt (ex. "Châtelet", "Gare du Nord")',
           },
         },
         required: ["query"],
@@ -145,14 +163,17 @@ function registerTools(
   mcpServer.registerTool(
     "get_info_trafic",
     {
+      title: "Info Trafic",
       description:
-        "Retourne l'Info Trafic d'une Ligne à partir d'un nom ou d'un identifiant. Une Ligne est obligatoire.",
+        "À appeler pour le trafic, les perturbations, incidents ou travaux d'une Ligne IDFM. Passe le nom ou l'id (ex. RER A, Métro 1, C01742). N'appelle pas get_line_id avant : cet outil résout le nom lui-même.",
+      annotations: TOOL_ANNOTATIONS,
       inputSchema: fromJsonSchema<{ query: string }>({
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "Nom ou identifiant de la Ligne",
+            description:
+              'Nom ou identifiant de la Ligne (ex. "RER A", "Métro 1", "C01742")',
           },
         },
         required: ["query"],
@@ -167,19 +188,22 @@ function registerTools(
   mcpServer.registerTool(
     "prochain_passage",
     {
+      title: "Prochains Passages",
       description:
-        "Retourne les Prochains Passages en temps réel d'une Zone d'arrêt, éventuellement filtrés par Ligne.",
+        'À appeler dès qu\'un usager demande les Prochains Passages, horaires temps réel ou temps d\'attente à un arrêt d\'Île-de-France. Passe le nom de l\'arrêt dans query (ex. "Châtelet") et la Ligne dans ligne si elle est connue (ex. "RER A"). N\'appelle pas get_stop_id : cet outil résout le nom lui-même.',
+      annotations: TOOL_ANNOTATIONS,
       inputSchema: fromJsonSchema<{ query: string; ligne?: string }>({
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "Nom ou identifiant de la Zone d'arrêt",
+            description:
+              'Nom ou identifiant de la Zone d\'arrêt (ex. "Châtelet")',
           },
           ligne: {
             type: "string",
             description:
-              "Nom ou identifiant optionnel de la Ligne pour filtrer les passages",
+              'Nom ou identifiant optionnel de la Ligne pour filtrer les passages (ex. "RER A")',
           },
         },
         required: ["query"],
@@ -199,7 +223,14 @@ async function handleMcp(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  const mcpServer = new McpServer({ name: "mcp-idfm", version: "0.1.0" });
+  const mcpServer = new McpServer(
+    {
+      name: "mcp-idfm",
+      version: "0.1.0",
+      title: "Île-de-France Mobilités",
+    },
+    { instructions: MCP_INSTRUCTIONS },
+  );
   registerTools(mcpServer, app, log);
   const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,

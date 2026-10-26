@@ -8,4 +8,5 @@ services:
       HOST: ${HOST:-localhost}
       PORT: ${PORT:-3000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      MAX_CANDIDATES: ${MAX_CANDIDATES:-11}
     restart: unless-stopped

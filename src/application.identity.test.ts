@@ -282,6 +282,34 @@ describe("get_line_id", () => {
       source: "Île-de-France Mobilités",
     });
   });
+
+  it("returns the union of fiches up to the configured candidate limit", async () => {
+    const fiches = numberedBusLignes(8);
+    const app = createApplication({
+      lookup: fakeLookup(fiches),
+      maxCandidates: 8,
+    });
+    const result = await app.getLineId("Bus");
+    expect(result).toEqual({
+      status: "ok",
+      fiches,
+      source: "Île-de-France Mobilités",
+    });
+  });
+
+  it("asks for clarification when matches exceed the configured candidate limit", async () => {
+    const fiches = numberedBusLignes(9);
+    const app = createApplication({
+      lookup: fakeLookup(fiches),
+      maxCandidates: 8,
+    });
+    const result = await app.getLineId("Bus");
+    expect(result).toEqual({
+      status: "needs_clarification",
+      candidates: fiches.map(({ id, label, mode }) => ({ id, label, mode })),
+      source: "Île-de-France Mobilités",
+    });
+  });
 });
 
 describe("get_stop_id", () => {

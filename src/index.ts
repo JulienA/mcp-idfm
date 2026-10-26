@@ -22,7 +22,7 @@ try {
 const log = createLogger(process.env);
 const result = boot(process.env);
 if (!result.ok) {
-  log.fatal("PRIM_API_KEY is missing");
+  log.fatal(result.message);
   process.exit(result.exitCode);
 }
 
@@ -31,6 +31,7 @@ log.info(
     bindAddress: result.config.bindAddress,
     host: result.config.host,
     port: result.config.port,
+    maxCandidates: result.config.maxCandidates,
   },
   "booted",
 );
@@ -40,6 +41,7 @@ const app = createApplication({
   lookup: createPrimNavitiaLookup({ apiKey, log }),
   snapshot: createPrimTrafficReports({ apiKey, log }),
   stopMonitoring: createPrimSiriStopMonitoring({ apiKey, log }),
+  maxCandidates: result.config.maxCandidates,
 });
 
 async function refreshAndLog(): Promise<void> {

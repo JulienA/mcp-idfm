@@ -9,6 +9,7 @@ describe("boot", () => {
       throw new Error("expected boot to fail");
     }
     expect(result.exitCode).not.toBe(0);
+    expect(result.message).toBe("PRIM_API_KEY is missing");
   });
 
   it("exits non-zero when PRIM_API_KEY is empty", () => {
@@ -80,6 +81,39 @@ describe("boot", () => {
       throw new Error("expected boot to succeed");
     }
     expect(result.config.port).toBe(3000);
+  });
+
+  it("defaults MAX_CANDIDATES to 5", () => {
+    const result = boot({ PRIM_API_KEY: "test-key" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+    expect(result.config.maxCandidates).toBe(5);
+  });
+
+  it("uses MAX_CANDIDATES from the environment", () => {
+    const result = boot({
+      PRIM_API_KEY: "test-key",
+      MAX_CANDIDATES: "8",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+    expect(result.config.maxCandidates).toBe(8);
+  });
+
+  it("exits non-zero when MAX_CANDIDATES is not a positive integer", () => {
+    for (const value of ["0", "-1", "1.5", "abc", " ", "9007199254740993"]) {
+      const result = boot({ PRIM_API_KEY: "test-key", MAX_CANDIDATES: value });
+      expect(result.ok).toBe(false);
+      if (result.ok) {
+        throw new Error(`expected boot to fail for ${value}`);
+      }
+      expect(result.exitCode).not.toBe(0);
+      expect(result.message).toBe("MAX_CANDIDATES must be a positive integer");
+    }
   });
 });
 

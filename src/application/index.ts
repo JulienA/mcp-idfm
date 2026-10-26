@@ -143,14 +143,19 @@ type MatchDecision<T> =
   | { kind: "few"; items: T[] }
   | { kind: "many"; items: T[] };
 
-function decideMatches<T>(matches: T[]): MatchDecision<T> {
+export const DEFAULT_MAX_CANDIDATES = 5;
+
+function decideMatches<T>(
+  matches: T[],
+  maxCandidates: number,
+): MatchDecision<T> {
   if (matches.length === 0) {
     return { kind: "none" };
   }
   if (matches.length === 1) {
     return { kind: "one", item: matches[0]! };
   }
-  if (matches.length > 5) {
+  if (matches.length > maxCandidates) {
     return { kind: "many", items: matches };
   }
   return { kind: "few", items: matches };
@@ -161,7 +166,14 @@ export function createApplication(deps: {
   clock?: Clock;
   snapshot?: InfoTraficSnapshot;
   stopMonitoring?: StopMonitoring;
+  maxCandidates?: number;
 }) {
+  const maxCandidates =
+    deps.maxCandidates !== undefined &&
+    Number.isSafeInteger(deps.maxCandidates) &&
+    deps.maxCandidates >= 1
+      ? deps.maxCandidates
+      : DEFAULT_MAX_CANDIDATES;
   const clock = deps.clock ?? { now: () => new Date() };
   const epochMs = () => clock.now().getTime();
   const stopMonitoring = deps.stopMonitoring ?? {
@@ -193,7 +205,7 @@ export function createApplication(deps: {
       } catch {
         throw new LookupUnavailableError();
       }
-      const decision = decideMatches(matches);
+      const decision = decideMatches(matches, maxCandidates);
       switch (decision.kind) {
         case "none":
           return {
@@ -286,7 +298,7 @@ export function createApplication(deps: {
       } catch {
         throw new LookupUnavailableError();
       }
-      const decision = decideMatches(matches);
+      const decision = decideMatches(matches, maxCandidates);
       switch (decision.kind) {
         case "none":
           return {
@@ -406,11 +418,12 @@ export type Config = {
   bindAddress: "0.0.0.0";
   host: string;
   port: number;
+  maxCandidates: number;
 };
 
 export type BootResult =
   | { ok: true; config: Config }
-  | { ok: false; exitCode: number };
+  | { ok: false; exitCode: number; message: string };
 
 export type Health = {
   ok: true;
@@ -435,9 +448,32 @@ export function isOriginAllowed(
   return allowed.has(origin);
 }
 
+function parseMaxCandidates(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return DEFAULT_MAX_CANDIDATES;
+  }
+  const trimmed = value.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) {
+    return undefined;
+  }
+  return parsed;
+}
+
 export function boot(env: NodeJS.ProcessEnv): BootResult {
   if (!env.PRIM_API_KEY?.trim()) {
-    return { ok: false, exitCode: 1 };
+    return { ok: false, exitCode: 1, message: "PRIM_API_KEY is missing" };
+  }
+  const maxCandidates = parseMaxCandidates(env.MAX_CANDIDATES);
+  if (maxCandidates === undefined) {
+    return {
+      ok: false,
+      exitCode: 1,
+      message: "MAX_CANDIDATES must be a positive integer",
+    };
   }
   return {
     ok: true,
@@ -445,6 +481,7 @@ export function boot(env: NodeJS.ProcessEnv): BootResult {
       bindAddress: "0.0.0.0",
       host: env.HOST ?? "localhost",
       port: env.PORT ? Number(env.PORT) : 3000,
+      maxCandidates,
     },
   };
 }

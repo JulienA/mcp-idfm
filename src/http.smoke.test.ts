@@ -59,7 +59,12 @@ describe("http adapter", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("jsonrpc");
+    const body = await response.text();
+    expect(body).toContain("jsonrpc");
+    expect(body).toContain("instructions");
+    expect(body).toContain("prochain_passage");
+    expect(body).toContain("Châtelet");
+    expect(body).toContain("RER A");
   });
 
   it("lists identity, Info Trafic and Prochain Passage tools with French descriptions", async () => {
@@ -104,6 +109,9 @@ describe("http adapter", () => {
     expect(body).toContain("Zone d'arrêt");
     expect(body).toContain("Info Trafic");
     expect(body).toContain("Prochains Passages");
+    expect(body).toContain("Châtelet");
+    expect(body).toContain("RER A");
+    expect(body).toContain("N'appelle pas get_stop_id");
   });
 
   it("rejects POST /mcp when Origin does not match HOST", async () => {
