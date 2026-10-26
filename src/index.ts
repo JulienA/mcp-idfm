@@ -1,11 +1,11 @@
 import { loadEnvFile } from "node:process";
 import { boot, createApplication } from "./application/index.js";
 import { startHttpServer } from "./http.js";
+import { startInfoTraficRefresh } from "./infra/info-trafic-refresh.js";
+import { createLogger } from "./infra/logger.js";
 import { createPrimNavitiaLookup } from "./infra/prim-navitia-lookup.js";
 import { createPrimSiriStopMonitoring } from "./infra/prim-siri-stop-monitoring.js";
 import { createPrimTrafficReports } from "./infra/prim-traffic-reports.js";
-
-const SNAPSHOT_REFRESH_MS = 2 * 60 * 1000;
 
 try {
   loadEnvFile();
@@ -19,10 +19,21 @@ try {
   }
 }
 
+const log = createLogger(process.env);
 const result = boot(process.env);
 if (!result.ok) {
+  log.fatal("PRIM_API_KEY is missing");
   process.exit(result.exitCode);
 }
+
+log.info(
+  {
+    bindAddress: result.config.bindAddress,
+    host: result.config.host,
+    port: result.config.port,
+  },
+  "booted",
+);
 
 const apiKey = process.env.PRIM_API_KEY!;
 const app = createApplication({
@@ -31,9 +42,30 @@ const app = createApplication({
   stopMonitoring: createPrimSiriStopMonitoring({ apiKey }),
 });
 
-await app.refreshSnapshot();
-setInterval(() => {
-  void app.refreshSnapshot();
-}, SNAPSHOT_REFRESH_MS);
+async function refreshAndLog(): Promise<void> {
+  await app.refreshSnapshot();
+  const health = app.getHealth();
+  if (health.stale) {
+    log.warn(
+      { trafic_updated_at: health.trafic_updated_at },
+      "Info Trafic snapshot stale",
+    );
+    return;
+  }
+  if (!health.trafic_updated_at) {
+    log.error("Info Trafic snapshot unavailable");
+    return;
+  }
+  log.info(
+    { trafic_updated_at: health.trafic_updated_at },
+    "Info Trafic snapshot updated",
+  );
+}
 
-await startHttpServer(result.config, app);
+await refreshAndLog();
+startInfoTraficRefresh(refreshAndLog, log);
+
+const server = await startHttpServer(result.config, app, log);
+server.on("error", (error) => {
+  log.error({ err: error }, "HTTP server error");
+});

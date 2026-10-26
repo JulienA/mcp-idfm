@@ -13,6 +13,14 @@ import {
   type Application,
   type Config,
 } from "./application/index.js";
+import type { Logger } from "./infra/logger.js";
+
+const silentLogger: Logger = {
+  info() {},
+  warn() {},
+  error() {},
+  fatal() {},
+};
 
 function pathname(req: IncomingMessage): string {
   return new URL(req.url ?? "/", "http://localhost").pathname;
@@ -161,6 +169,7 @@ async function handleMcp(
 async function handleRequest(
   config: Config,
   app: Application,
+  log: Logger,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -173,6 +182,10 @@ async function handleRequest(
     }
     if (req.method === "POST" && path === "/mcp") {
       if (!isOriginAllowed(originHeader(req), config)) {
+        log.warn(
+          { origin: originHeader(req), host: config.host, port: config.port },
+          "Origin rejected",
+        );
         res.writeHead(403);
         res.end();
         return;
@@ -182,7 +195,8 @@ async function handleRequest(
     }
     res.writeHead(404);
     res.end();
-  } catch {
+  } catch (error) {
+    log.error({ err: error }, "HTTP request failed");
     if (!res.headersSent) {
       res.writeHead(500);
     }
@@ -193,13 +207,22 @@ async function handleRequest(
 export async function startHttpServer(
   config: Config,
   app: Application,
+  log: Logger = silentLogger,
 ): Promise<Server> {
   const server = createServer((req, res) => {
-    void handleRequest(config, app, req, res);
+    void handleRequest(config, app, log, req, res);
   });
 
   await new Promise<void>((resolve, reject) => {
     server.listen(config.port, config.bindAddress, () => {
+      log.info(
+        {
+          bindAddress: config.bindAddress,
+          host: config.host,
+          port: config.port,
+        },
+        "MCP listening",
+      );
       resolve();
     });
     server.once("error", reject);

@@ -13,6 +13,10 @@ import {
   type ZoneDarret,
   type ZoneDarretFiche,
 } from "../domain/index.js";
+import {
+  createReferentialCache,
+  type ReferentialCache,
+} from "./referential-cache.js";
 
 export type {
   IdentityCandidate,
@@ -61,8 +65,6 @@ export class LookupUnavailableError extends Error {
     this.name = "LookupUnavailableError";
   }
 }
-
-const REFERENTIAL_TTL_MS = 24 * 60 * 60 * 1000;
 
 function toStopFiche(stop: ZoneDarret): ZoneDarretFiche {
   return {
@@ -116,17 +118,16 @@ function matchedLignes(identity: Extract<LineIdentityResult, { status: "ok" }>):
 }
 
 async function cachedSearch<T>(
-  cache: Map<string, { matches: T[]; storedAt: number }>,
+  cache: ReferentialCache<T[]>,
   key: string,
-  now: number,
   search: () => Promise<T[]>,
 ): Promise<T[]> {
   const cached = cache.get(key);
-  if (cached && now - cached.storedAt < REFERENTIAL_TTL_MS) {
-    return cached.matches;
+  if (cached) {
+    return cached;
   }
   const matches = await search();
-  cache.set(key, { matches, storedAt: now });
+  cache.set(key, matches);
   return matches;
 }
 
@@ -162,13 +163,14 @@ export function createApplication(deps: {
   stopMonitoring?: StopMonitoring;
 }) {
   const clock = deps.clock ?? { now: () => new Date() };
+  const epochMs = () => clock.now().getTime();
   const stopMonitoring = deps.stopMonitoring ?? {
     async getPassages(): Promise<ProchainPassage[]> {
       throw new Error("SIRI stop-monitoring adapter is required");
     },
   };
-  const lineCache = new Map<string, { matches: Ligne[]; storedAt: number }>();
-  const stopCache = new Map<string, { matches: ZoneDarret[]; storedAt: number }>();
+  const lineCache = createReferentialCache<Ligne[]>(epochMs);
+  const stopCache = createReferentialCache<ZoneDarret[]>(epochMs);
   let snapshotState:
     | { messages: InfoTraficMessage[]; updatedAt: Date; stale: boolean }
     | undefined;
@@ -183,10 +185,9 @@ export function createApplication(deps: {
           source: SOURCE,
         };
       }
-      const now = clock.now().getTime();
       let matches: Ligne[];
       try {
-        matches = await cachedSearch(lineCache, normalized, now, () =>
+        matches = await cachedSearch(lineCache, normalized, () =>
           deps.lookup.searchLines(normalized),
         );
       } catch {
@@ -277,10 +278,9 @@ export function createApplication(deps: {
           source: SOURCE,
         };
       }
-      const now = clock.now().getTime();
       let matches: ZoneDarret[];
       try {
-        matches = await cachedSearch(stopCache, normalized, now, () =>
+        matches = await cachedSearch(stopCache, normalized, () =>
           deps.lookup.searchStops(normalized),
         );
       } catch {
