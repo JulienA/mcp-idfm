@@ -2,22 +2,10 @@ services:
   mcp-idfm:
     build: .
     ports:
-      - "${PORT:-3000}:${PORT:-3000}"
+      - "4000:${PORT:-3000}"
     environment:
       PRIM_API_KEY: ${PRIM_API_KEY:?PRIM_API_KEY is required}
       HOST: ${HOST:-localhost}
       PORT: ${PORT:-3000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
     restart: unless-stopped

@@ -1,10 +1,19 @@
 import { pino } from "pino";
 
 export type Logger = {
+  debug(obj: object | string, msg?: string): void;
   info(obj: object | string, msg?: string): void;
   warn(obj: object | string, msg?: string): void;
   error(obj: object | string, msg?: string): void;
   fatal(obj: object | string, msg?: string): void;
+};
+
+export const silentLogger: Logger = {
+  debug() {},
+  info() {},
+  warn() {},
+  error() {},
+  fatal() {},
 };
 
 export function createLogger(env: NodeJS.ProcessEnv = process.env): Logger {

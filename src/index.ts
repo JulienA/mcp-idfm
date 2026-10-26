@@ -37,9 +37,9 @@ log.info(
 
 const apiKey = process.env.PRIM_API_KEY!;
 const app = createApplication({
-  lookup: createPrimNavitiaLookup({ apiKey }),
-  snapshot: createPrimTrafficReports({ apiKey }),
-  stopMonitoring: createPrimSiriStopMonitoring({ apiKey }),
+  lookup: createPrimNavitiaLookup({ apiKey, log }),
+  snapshot: createPrimTrafficReports({ apiKey, log }),
+  stopMonitoring: createPrimSiriStopMonitoring({ apiKey, log }),
 });
 
 async function refreshAndLog(): Promise<void> {
@@ -63,9 +63,28 @@ async function refreshAndLog(): Promise<void> {
 }
 
 await refreshAndLog();
-startInfoTraficRefresh(refreshAndLog, log);
+const refreshJob = startInfoTraficRefresh(refreshAndLog, log);
 
 const server = await startHttpServer(result.config, app, log);
 server.on("error", (error) => {
   log.error({ err: error }, "HTTP server error");
+});
+
+function shutdown(signal: string): void {
+  log.info({ signal }, "shutting down");
+  refreshJob.stop();
+  server.close((error) => {
+    if (error) {
+      log.error({ err: error }, "HTTP server close failed");
+      process.exit(1);
+    }
+    process.exit(0);
+  });
+}
+
+process.on("SIGINT", () => {
+  shutdown("SIGINT");
+});
+process.on("SIGTERM", () => {
+  shutdown("SIGTERM");
 });

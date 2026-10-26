@@ -1,5 +1,7 @@
 import { canonicalLineId, type ProchainPassage } from "../domain/index.js";
-import { primFetchInit } from "./prim-fetch.js";
+import type { Logger } from "./logger.js";
+import { silentLogger } from "./logger.js";
+import { primRequest } from "./prim-fetch.js";
 
 const PRIM_STOP_MONITORING =
   "https://prim.iledefrance-mobilites.fr/marketplace/stop-monitoring";
@@ -7,6 +9,7 @@ const PRIM_STOP_MONITORING =
 type PrimSiriStopMonitoringOptions = {
   apiKey: string;
   fetch?: typeof fetch;
+  log?: Logger;
 };
 
 function asArray<T>(value: T | T[] | undefined | null): T[] {
@@ -92,12 +95,13 @@ export function createPrimSiriStopMonitoring(
   options: PrimSiriStopMonitoringOptions,
 ): { getPassages(monitoringRef: string): Promise<ProchainPassage[]> } {
   const fetchFn = options.fetch ?? fetch;
+  const log = options.log ?? silentLogger;
 
   return {
     async getPassages(monitoringRef) {
       const url = new URL(PRIM_STOP_MONITORING);
       url.searchParams.set("MonitoringRef", monitoringRef);
-      const response = await fetchFn(url, primFetchInit(options.apiKey));
+      const response = await primRequest(url, options.apiKey, fetchFn, log);
       if (!response.ok) {
         throw new Error(`PRIM SIRI stop-monitoring failed: ${response.status}`);
       }
@@ -114,10 +118,15 @@ export function createPrimSiriStopMonitoring(
           | { MonitoredStopVisit?: unknown }[]
           | undefined,
       );
-      return deliveries
+      const passages = deliveries
         .flatMap((delivery) => asArray(delivery.MonitoredStopVisit))
         .map(toProchainPassage)
         .filter((passage): passage is ProchainPassage => passage !== undefined);
+      log.info(
+        { monitoringRef, passages: passages.length },
+        "PRIM SIRI stop-monitoring",
+      );
+      return passages;
     },
   };
 }

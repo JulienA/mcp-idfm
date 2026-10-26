@@ -5,7 +5,9 @@ import {
   type InfoTraficMessage,
   type Severite,
 } from "../domain/index.js";
-import { primFetchInit } from "./prim-fetch.js";
+import type { Logger } from "./logger.js";
+import { silentLogger } from "./logger.js";
+import { primRequest } from "./prim-fetch.js";
 
 const PRIM_TRAFFIC_REPORTS_URL =
   "https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/traffic_reports";
@@ -15,6 +17,7 @@ const PAGE_SIZE = 1000;
 type PrimTrafficReportsOptions = {
   apiKey: string;
   fetch?: typeof fetch;
+  log?: Logger;
 };
 
 type NavitiaLink = {
@@ -287,6 +290,7 @@ export function createPrimTrafficReports(
   options: PrimTrafficReportsOptions,
 ): { fetch(): Promise<InfoTraficMessage[]> } {
   const fetchFn = options.fetch ?? fetch;
+  const log = options.log ?? silentLogger;
 
   async function fetchPage(
     startPage: number,
@@ -298,7 +302,7 @@ export function createPrimTrafficReports(
     if (startPage > 0) {
       url.searchParams.set("start_page", String(startPage));
     }
-    const response = await fetchFn(url, primFetchInit(options.apiKey));
+    const response = await primRequest(url, options.apiKey, fetchFn, log);
     if (!response.ok) {
       throw new Error(`PRIM traffic_reports failed: ${response.status}`);
     }
@@ -316,7 +320,12 @@ export function createPrimTrafficReports(
           pages.push(await fetchPage(page));
         }
       }
-      return toMessages(pages);
+      const messages = toMessages(pages);
+      log.info(
+        { messages: messages.length, pages: pages.length, total_result: total },
+        "PRIM traffic_reports parsed",
+      );
+      return messages;
     },
   };
 }

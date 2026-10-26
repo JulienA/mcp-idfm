@@ -7,16 +7,30 @@ export function startInfoTraficRefresh(
   refresh: () => Promise<void>,
   log: Logger,
 ): Cron {
-  return new Cron(
+  const job = new Cron(
     INFO_TRAFIC_CRON,
     {
       name: "info-trafic-snapshot",
       timezone: "Europe/Paris",
-      protect: true,
+      protect: (blocked) => {
+        log.warn(
+          { currentRun: blocked.currentRun()?.toISOString() },
+          "Info Trafic refresh skipped, previous run still in progress",
+        );
+      },
       catch: (error) => {
         log.error({ err: error }, "Info Trafic refresh failed");
       },
     },
     refresh,
   );
+  log.info(
+    {
+      cron: INFO_TRAFIC_CRON,
+      timezone: "Europe/Paris",
+      next: job.nextRun()?.toISOString(),
+    },
+    "Info Trafic refresh scheduled",
+  );
+  return job;
 }
