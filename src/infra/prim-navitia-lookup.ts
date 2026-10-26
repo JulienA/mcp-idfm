@@ -1,4 +1,6 @@
 import type { Ligne, NavitiaLookup, ZoneDarret } from "../application/index.js";
+import { canonicalLineId, canonicalStopId } from "../ids.js";
+import { primFetchInit } from "./prim-fetch.js";
 
 const PRIM_NAVITIA_BASE =
   "https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia";
@@ -31,15 +33,6 @@ type NavitiaPlace = {
   embedded_type?: string;
   stop_area?: NavitiaStopArea;
 };
-
-function canonicalLineId(navitiaId: string): string {
-  const match = /(C\d+)$/i.exec(navitiaId);
-  return match?.[1]?.toUpperCase() ?? navitiaId;
-}
-
-function canonicalStopId(navitiaId: string): string {
-  return navitiaId.replace(/^stop_area:IDFM:/i, "");
-}
 
 function toLigne(line: NavitiaLine): Ligne | undefined {
   if (!line.id) {
@@ -85,9 +78,7 @@ export function createPrimNavitiaLookup(
     } else {
       url.searchParams.append("type[]", "stop_area");
     }
-    const response = await fetchFn(url, {
-      headers: { "API Key": options.apiKey },
-    });
+    const response = await fetchFn(url, primFetchInit(options.apiKey));
     if (!response.ok) {
       throw new Error(`PRIM Navitia lookup failed: ${response.status}`);
     }

@@ -8,6 +8,7 @@ import {
 } from "node:http";
 import {
   isOriginAllowed,
+  LookupUnavailableError,
   SnapshotUnavailableError,
   type Application,
   type Config,
@@ -20,6 +21,43 @@ function pathname(req: IncomingMessage): string {
 function originHeader(req: IncomingMessage): string | undefined {
   const value = req.headers.origin;
   return Array.isArray(value) ? value[0] : value;
+}
+
+async function toolResult(
+  run: () => Promise<unknown>,
+): Promise<{ content: { type: "text"; text: string }[]; isError?: true }> {
+  try {
+    const result = await run();
+    if (
+      result &&
+      typeof result === "object" &&
+      "status" in result &&
+      (result as { status: unknown }).status === "error"
+    ) {
+      const message =
+        "message" in result && typeof result.message === "string"
+          ? result.message
+          : "Erreur";
+      return {
+        isError: true,
+        content: [{ type: "text", text: message }],
+      };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+    };
+  } catch (error) {
+    if (
+      error instanceof SnapshotUnavailableError ||
+      error instanceof LookupUnavailableError
+    ) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: error.message }],
+      };
+    }
+    throw error;
+  }
 }
 
 function registerTools(mcpServer: McpServer, app: Application): void {
@@ -39,12 +77,7 @@ function registerTools(mcpServer: McpServer, app: Application): void {
         required: ["query"],
       }),
     },
-    async ({ query }) => {
-      const result = await app.getLineId(query);
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }],
-      };
-    },
+    async ({ query }) => toolResult(() => app.getLineId(query)),
   );
 
   mcpServer.registerTool(
@@ -63,12 +96,7 @@ function registerTools(mcpServer: McpServer, app: Application): void {
         required: ["query"],
       }),
     },
-    async ({ query }) => {
-      const result = await app.getStopId(query);
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }],
-      };
-    },
+    async ({ query }) => toolResult(() => app.getStopId(query)),
   );
 
   mcpServer.registerTool(
@@ -87,22 +115,7 @@ function registerTools(mcpServer: McpServer, app: Application): void {
         required: ["query"],
       }),
     },
-    async ({ query }) => {
-      try {
-        const result = await app.getInfoTrafic(query);
-        return {
-          content: [{ type: "text", text: JSON.stringify(result) }],
-        };
-      } catch (error) {
-        if (error instanceof SnapshotUnavailableError) {
-          return {
-            isError: true,
-            content: [{ type: "text", text: error.message }],
-          };
-        }
-        throw error;
-      }
-    },
+    async ({ query }) => toolResult(() => app.getInfoTrafic(query)),
   );
 
   mcpServer.registerTool(
@@ -126,18 +139,8 @@ function registerTools(mcpServer: McpServer, app: Application): void {
         required: ["query"],
       }),
     },
-    async ({ query, ligne }) => {
-      const result = await app.prochainPassage(query, ligne);
-      if (result.status === "error") {
-        return {
-          isError: true,
-          content: [{ type: "text", text: result.message }],
-        };
-      }
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }],
-      };
-    },
+    async ({ query, ligne }) =>
+      toolResult(() => app.prochainPassage(query, ligne)),
   );
 }
 

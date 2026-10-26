@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createApplication } from "./application/index.js";
+import {
+  createApplication,
+  LookupUnavailableError,
+} from "./application/index.js";
 import type {
   Clock,
   Ligne,
@@ -254,6 +257,21 @@ describe("get_line_id", () => {
     });
   });
 
+  it("fails when PRIM lookup cannot search Lignes", async () => {
+    const app = createApplication({
+      lookup: {
+        searchLines: async () => {
+          throw new Error("PRIM down");
+        },
+        searchStops: async () => [],
+      },
+    });
+
+    await expect(app.getLineId("RER B")).rejects.toBeInstanceOf(
+      LookupUnavailableError,
+    );
+  });
+
   it("asks for clarification when more than five Lignes match", async () => {
     const fiches = numberedBusLignes(6);
     const app = createApplication({ lookup: fakeLookup(fiches) });
@@ -426,6 +444,21 @@ describe("get_stop_id", () => {
       },
       source: "Île-de-France Mobilités",
     });
+  });
+
+  it("fails when PRIM lookup cannot search Zones d'arrêt", async () => {
+    const app = createApplication({
+      lookup: {
+        searchLines: async () => [],
+        searchStops: async () => {
+          throw new Error("PRIM down");
+        },
+      },
+    });
+
+    await expect(app.getStopId("Châtelet-Les Halles")).rejects.toBeInstanceOf(
+      LookupUnavailableError,
+    );
   });
 
   it("asks for clarification when more than five Zones d'arrêt match", async () => {

@@ -1,3 +1,5 @@
+import { formatIsoParis } from "../iso-paris.js";
+
 export type Ligne = {
   id: string;
   label: string;
@@ -26,16 +28,25 @@ export type NavitiaLookup = {
   searchStops(query: string): Promise<ZoneDarret[]>;
 };
 
-export type LivePassage = {
+export type StatutDePassage =
+  | "onTime"
+  | "early"
+  | "delayed"
+  | "cancelled"
+  | "arrived"
+  | "departed"
+  | (string & {});
+
+export type ProchainPassage = {
   ligneId: string;
   ligneLabel: string;
   destination: string;
   expectedAt: Date;
-  statut: string;
+  statut: StatutDePassage;
 };
 
 export type StopMonitoring = {
-  getPassages(monitoringRef: string): Promise<LivePassage[]>;
+  getPassages(monitoringRef: string): Promise<ProchainPassage[]>;
 };
 
 export type Clock = {
@@ -63,6 +74,13 @@ export class SnapshotUnavailableError extends Error {
   constructor() {
     super("Info Trafic indisponible");
     this.name = "SnapshotUnavailableError";
+  }
+}
+
+export class LookupUnavailableError extends Error {
+  constructor() {
+    super("Recherche indisponible");
+    this.name = "LookupUnavailableError";
   }
 }
 
@@ -145,7 +163,7 @@ export type PassageGroup = {
   destination: string;
   passages: {
     expected_at: string;
-    statut: string;
+    statut: StatutDePassage;
     zone_darret: { id: string; label: string };
   }[];
 };
@@ -185,29 +203,6 @@ function normalizeLineQuery(query: string): string {
   return trimmed;
 }
 
-function toParisIso(date: Date): string {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  });
-  const parts = Object.fromEntries(
-    formatter.formatToParts(date).map((part) => [part.type, part.value]),
-  );
-  const local = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
-  const offsetMin = Math.round((Date.parse(`${local}Z`) - date.getTime()) / 60000);
-  const sign = offsetMin >= 0 ? "+" : "-";
-  const abs = Math.abs(offsetMin);
-  const hh = String(Math.floor(abs / 60)).padStart(2, "0");
-  const mm = String(abs % 60).padStart(2, "0");
-  return `${local}${sign}${hh}:${mm}`;
-}
-
 function normalizeStopQuery(query: string): string {
   const trimmed = query.trim();
   const navitia = /^stop_area:IDFM:(.+)$/i.exec(trimmed);
@@ -237,6 +232,46 @@ function matchedLignes(identity: Extract<LineIdentityResult, { status: "ok" }>):
   return "fiche" in identity ? [identity.fiche] : identity.fiches;
 }
 
+async function cachedSearch<T>(
+  cache: Map<string, { matches: T[]; storedAt: number }>,
+  key: string,
+  now: number,
+  search: () => Promise<T[]>,
+): Promise<T[]> {
+  const cached = cache.get(key);
+  if (cached && now - cached.storedAt < REFERENTIAL_TTL_MS) {
+    return cached.matches;
+  }
+  const matches = await search();
+  cache.set(key, { matches, storedAt: now });
+  return matches;
+}
+
+function toCandidates(
+  matches: { id: string; label: string; mode: string }[],
+): IdentityCandidate[] {
+  return matches.map(({ id, label, mode }) => ({ id, label, mode }));
+}
+
+type MatchDecision<T> =
+  | { kind: "none" }
+  | { kind: "one"; item: T }
+  | { kind: "few"; items: T[] }
+  | { kind: "many"; items: T[] };
+
+function decideMatches<T>(matches: T[]): MatchDecision<T> {
+  if (matches.length === 0) {
+    return { kind: "none" };
+  }
+  if (matches.length === 1) {
+    return { kind: "one", item: matches[0]! };
+  }
+  if (matches.length > 5) {
+    return { kind: "many", items: matches };
+  }
+  return { kind: "few", items: matches };
+}
+
 export function createApplication(deps: {
   lookup: NavitiaLookup;
   clock?: Clock;
@@ -245,7 +280,7 @@ export function createApplication(deps: {
 }) {
   const clock = deps.clock ?? { now: () => new Date() };
   const stopMonitoring = deps.stopMonitoring ?? {
-    async getPassages(): Promise<LivePassage[]> {
+    async getPassages(): Promise<ProchainPassage[]> {
       throw new Error("SIRI stop-monitoring adapter is required");
     },
   };
@@ -266,36 +301,33 @@ export function createApplication(deps: {
         };
       }
       const now = clock.now().getTime();
-      const cached = lineCache.get(normalized);
-      const matches =
-        cached && now - cached.storedAt < REFERENTIAL_TTL_MS
-          ? cached.matches
-          : await deps.lookup.searchLines(normalized);
-      if (!cached || now - cached.storedAt >= REFERENTIAL_TTL_MS) {
-        lineCache.set(normalized, { matches, storedAt: now });
+      let matches: Ligne[];
+      try {
+        matches = await cachedSearch(lineCache, normalized, now, () =>
+          deps.lookup.searchLines(normalized),
+        );
+      } catch {
+        throw new LookupUnavailableError();
       }
-      if (matches.length === 0) {
-        return {
-          status: "not_found",
-          message: "Aucune Ligne correspondante",
-          source: SOURCE,
-        };
+      const decision = decideMatches(matches);
+      switch (decision.kind) {
+        case "none":
+          return {
+            status: "not_found",
+            message: "Aucune Ligne correspondante",
+            source: SOURCE,
+          };
+        case "one":
+          return { status: "ok", fiche: decision.item, source: SOURCE };
+        case "many":
+          return {
+            status: "needs_clarification",
+            candidates: toCandidates(decision.items),
+            source: SOURCE,
+          };
+        case "few":
+          return { status: "ok", fiches: decision.items, source: SOURCE };
       }
-      if (matches.length === 1) {
-        return { status: "ok", fiche: matches[0]!, source: SOURCE };
-      }
-      if (matches.length > 5) {
-        return {
-          status: "needs_clarification",
-          candidates: matches.map(({ id, label, mode }) => ({
-            id,
-            label,
-            mode,
-          })),
-          source: SOURCE,
-        };
-      }
-      return { status: "ok", fiches: matches, source: SOURCE };
     },
 
     async refreshSnapshot(): Promise<void> {
@@ -336,7 +368,7 @@ export function createApplication(deps: {
         ...(messages.length === 0
           ? { summary: "Aucune perturbation" as const }
           : {}),
-        updated_at: toParisIso(snapshotState.updatedAt),
+        updated_at: formatIsoParis(snapshotState.updatedAt),
         stale: snapshotState.stale,
         source: SOURCE,
       };
@@ -348,7 +380,7 @@ export function createApplication(deps: {
       }
       return {
         ok: true,
-        trafic_updated_at: toParisIso(snapshotState.updatedAt),
+        trafic_updated_at: formatIsoParis(snapshotState.updatedAt),
         stale: snapshotState.stale,
       };
     },
@@ -363,36 +395,41 @@ export function createApplication(deps: {
         };
       }
       const now = clock.now().getTime();
-      const cached = stopCache.get(normalized);
-      const matches =
-        cached && now - cached.storedAt < REFERENTIAL_TTL_MS
-          ? cached.matches
-          : await deps.lookup.searchStops(normalized);
-      if (!cached || now - cached.storedAt >= REFERENTIAL_TTL_MS) {
-        stopCache.set(normalized, { matches, storedAt: now });
+      let matches: ZoneDarret[];
+      try {
+        matches = await cachedSearch(stopCache, normalized, now, () =>
+          deps.lookup.searchStops(normalized),
+        );
+      } catch {
+        throw new LookupUnavailableError();
       }
-      if (matches.length === 0) {
-        return {
-          status: "not_found",
-          message: "Aucune Zone d'arrêt correspondante",
-          source: SOURCE,
-        };
+      const decision = decideMatches(matches);
+      switch (decision.kind) {
+        case "none":
+          return {
+            status: "not_found",
+            message: "Aucune Zone d'arrêt correspondante",
+            source: SOURCE,
+          };
+        case "one":
+          return {
+            status: "ok",
+            fiche: toStopFiche(decision.item),
+            source: SOURCE,
+          };
+        case "many":
+          return {
+            status: "needs_clarification",
+            candidates: toCandidates(decision.items),
+            source: SOURCE,
+          };
+        case "few":
+          return {
+            status: "ok",
+            fiches: decision.items.map(toStopFiche),
+            source: SOURCE,
+          };
       }
-      if (matches.length === 1) {
-        return { status: "ok", fiche: toStopFiche(matches[0]!), source: SOURCE };
-      }
-      if (matches.length > 5) {
-        return {
-          status: "needs_clarification",
-          candidates: matches.map(({ id, label, mode }) => ({
-            id,
-            label,
-            mode,
-          })),
-          source: SOURCE,
-        };
-      }
-      return { status: "ok", fiches: matches.map(toStopFiche), source: SOURCE };
     },
 
     async prochainPassage(
@@ -414,7 +451,7 @@ export function createApplication(deps: {
       }
       const stops =
         "fiche" in stopResult ? [stopResult.fiche] : stopResult.fiches;
-      type AnnotatedPassage = LivePassage & {
+      type AnnotatedPassage = ProchainPassage & {
         zone: { id: string; label: string };
       };
       let live: AnnotatedPassage[] = [];
@@ -450,7 +487,7 @@ export function createApplication(deps: {
             group.destination === passage.destination,
         );
         const item = {
-          expected_at: toParisIso(passage.expectedAt),
+          expected_at: formatIsoParis(passage.expectedAt),
           statut: passage.statut,
           zone_darret: passage.zone,
         };
@@ -512,10 +549,6 @@ export function isOriginAllowed(
     `https://${host}:${port}`,
   ]);
   return allowed.has(origin);
-}
-
-export function getHealth(): Health {
-  return { ok: true, trafic_updated_at: null, stale: null };
 }
 
 export function boot(env: NodeJS.ProcessEnv): BootResult {

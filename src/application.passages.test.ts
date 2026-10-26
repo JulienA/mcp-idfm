@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createApplication } from "./application/index.js";
+import { createPrimSiriStopMonitoring } from "./infra/prim-siri-stop-monitoring.js";
 import type {
-  LivePassage,
   Ligne,
   NavitiaLookup,
+  ProchainPassage,
   StopMonitoring,
   ZoneDarret,
 } from "./application/index.js";
@@ -95,7 +96,7 @@ function fakeLookup(lines: Ligne[], stops: ZoneDarret[] = []): NavitiaLookup {
 }
 
 function fakeStopMonitoring(
-  passagesByRef: Record<string, LivePassage[]>,
+  passagesByRef: Record<string, ProchainPassage[]>,
 ): StopMonitoring {
   return {
     async getPassages(monitoringRef) {
@@ -140,6 +141,49 @@ describe("prochain_passage", () => {
           ],
         },
       ],
+      source: "Île-de-France Mobilités",
+    });
+  });
+
+  it("treats a SIRI visit with only Aimed times as no realtime", async () => {
+    const app = createApplication({
+      lookup: fakeLookup([RER_B], [CHATELET_RER]),
+      stopMonitoring: createPrimSiriStopMonitoring({
+        apiKey: "test-key",
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              Siri: {
+                ServiceDelivery: {
+                  StopMonitoringDelivery: {
+                    MonitoredStopVisit: [
+                      {
+                        MonitoredVehicleJourney: {
+                          LineRef: "STIF:Line::C01742:",
+                          PublishedLineName: "B",
+                          DestinationName: "Robinson",
+                          MonitoredCall: {
+                            AimedDepartureTime: "2026-07-01T10:04:00.000Z",
+                            AimedArrivalTime: "2026-07-01T10:04:00.000Z",
+                            DepartureStatus: "onTime",
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+      }),
+    });
+
+    const result = await app.prochainPassage("Châtelet-Les Halles");
+    expect(result).toEqual({
+      status: "ok",
+      groups: [],
+      summary: "Pas de temps réel",
       source: "Île-de-France Mobilités",
     });
   });
@@ -516,7 +560,7 @@ describe("prochain_passage", () => {
   });
 
   it("does not cache live Prochains Passages", async () => {
-    const catalog: Record<string, LivePassage[]> = {
+    const catalog: Record<string, ProchainPassage[]> = {
       "STIF:StopArea:SP:73641:": [
         {
           ligneId: "C01742",

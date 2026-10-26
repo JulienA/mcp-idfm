@@ -3,6 +3,9 @@ import type {
   InfoTraficSnapshot,
   Severite,
 } from "../application/index.js";
+import { canonicalLineId, canonicalStopId } from "../ids.js";
+import { formatIsoParis } from "../iso-paris.js";
+import { primFetchInit } from "./prim-fetch.js";
 
 const PRIM_TRAFFIC_REPORTS_URL =
   "https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/traffic_reports";
@@ -41,6 +44,11 @@ type NavitiaPtObject = {
   stop_area?: NavitiaStopArea;
 };
 
+type NavitiaMessage = {
+  text?: string;
+  channel?: { id?: string; name?: string; types?: string[] };
+};
+
 type NavitiaDisruption = {
   id?: string;
   disruption_id?: string;
@@ -48,7 +56,7 @@ type NavitiaDisruption = {
   cause?: string;
   category?: string;
   severity?: { name?: string; effect?: string };
-  messages?: { text?: string }[];
+  messages?: NavitiaMessage[];
   application_periods?: { begin?: string; end?: string }[];
   impacted_objects?: { pt_object?: NavitiaPtObject }[];
 };
@@ -64,46 +72,6 @@ type NavitiaTrafficReportsResponse = {
   pagination?: { total_result?: number };
 };
 
-function canonicalLineId(navitiaId: string): string {
-  const match = /(C\d+)$/i.exec(navitiaId);
-  return match?.[1]?.toUpperCase() ?? navitiaId;
-}
-
-function canonicalStopId(navitiaId: string): string {
-  return navitiaId.replace(/^stop_area:IDFM:/i, "");
-}
-
-function parisOffset(raw: string): string {
-  const withoutGmt = raw.replace(/^GMT/i, "");
-  if (!withoutGmt || withoutGmt === "Z") {
-    return "Z";
-  }
-  const match = /^([+-])(\d{1,2})(?::?(\d{2}))?$/.exec(withoutGmt);
-  if (!match) {
-    return "+00:00";
-  }
-  return `${match[1]}${match[2]!.padStart(2, "0")}:${(match[3] ?? "00").padStart(2, "0")}`;
-}
-
-function formatIsoParis(date: Date): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Paris",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-      timeZoneName: "longOffset",
-    })
-      .formatToParts(date)
-      .map((part) => [part.type, part.value]),
-  );
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${parisOffset(parts.timeZoneName ?? "")}`;
-}
-
 function navitiaDateToIso(value: string): string {
   const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/.exec(value);
   if (!match) {
@@ -117,6 +85,31 @@ function navitiaDateToIso(value: string): string {
     }
   }
   return `${wall}+01:00`;
+}
+
+function isTitleChannel(channel: NavitiaMessage["channel"]): boolean {
+  const tokens = [channel?.id, channel?.name, ...(channel?.types ?? [])]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.toLowerCase());
+  return tokens.some((token) => token === "titre" || token === "title");
+}
+
+function disruptionTitleAndText(disruption: NavitiaDisruption): {
+  title: string;
+  text: string;
+} {
+  const messages = disruption.messages ?? [];
+  const titleMessage = messages.find((message) =>
+    isTitleChannel(message.channel),
+  );
+  const bodyMessages = messages.filter((message) => message !== titleMessage);
+  return {
+    title: titleMessage?.text?.trim() || "Info Trafic",
+    text: bodyMessages
+      .map((message) => message.text)
+      .filter((text): text is string => Boolean(text))
+      .join("\n"),
+  };
 }
 
 function toSeverite(effect: string | undefined): Severite {
@@ -203,6 +196,9 @@ function toMessages(pages: NavitiaTrafficReportsResponse[]): InfoTraficMessage[]
           .map((link) => link.id)
           .filter((id): id is string => Boolean(id));
         addStop(keys, stop);
+        for (const line of report.lines ?? []) {
+          addLigne(keys, line);
+        }
       }
     }
   }
@@ -259,13 +255,10 @@ function toMessages(pages: NavitiaTrafficReportsResponse[]): InfoTraficMessage[]
       }
     }
 
+    const { title, text } = disruptionTitleAndText(disruption);
     messages.push({
-      title: disruption.severity?.name ?? "Info Trafic",
-      text:
-        disruption.messages
-          ?.map((message) => message.text)
-          .filter((text): text is string => Boolean(text))
-          .join("\n") ?? "",
+      title,
+      text,
       severite: toSeverite(disruption.severity?.effect),
       cause: disruption.cause ?? disruption.category ?? "",
       application_periods: (disruption.application_periods ?? [])
@@ -298,9 +291,7 @@ export function createPrimTrafficReports(
     if (startPage > 0) {
       url.searchParams.set("start_page", String(startPage));
     }
-    const response = await fetchFn(url, {
-      headers: { "API Key": options.apiKey },
-    });
+    const response = await fetchFn(url, primFetchInit(options.apiKey));
     if (!response.ok) {
       throw new Error(`PRIM traffic_reports failed: ${response.status}`);
     }

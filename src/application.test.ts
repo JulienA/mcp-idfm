@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boot, getHealth, isOriginAllowed } from "./application/index.js";
+import { boot, createApplication, isOriginAllowed } from "./application/index.js";
 
 describe("boot", () => {
   it("exits non-zero when PRIM_API_KEY is missing", () => {
@@ -85,7 +85,13 @@ describe("boot", () => {
 
 describe("health", () => {
   it("returns ok with an empty Info Trafic snapshot", () => {
-    expect(getHealth()).toEqual({
+    const app = createApplication({
+      lookup: {
+        searchLines: async () => [],
+        searchStops: async () => [],
+      },
+    });
+    expect(app.getHealth()).toEqual({
       ok: true,
       trafic_updated_at: null,
       stale: null,
