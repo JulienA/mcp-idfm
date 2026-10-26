@@ -6,6 +6,7 @@ import { createLogger } from "./infra/logger.js";
 import { createPrimNavitiaLookup } from "./infra/prim-navitia-lookup.js";
 import { createPrimSiriStopMonitoring } from "./infra/prim-siri-stop-monitoring.js";
 import { createPrimTrafficReports } from "./infra/prim-traffic-reports.js";
+import { createPrimZoneCorrespondanceLookup } from "./infra/prim-zone-correspondance.js";
 
 try {
   loadEnvFile();
@@ -39,6 +40,7 @@ log.info(
 const apiKey = process.env.PRIM_API_KEY!;
 const app = createApplication({
   lookup: createPrimNavitiaLookup({ apiKey, log }),
+  correspondances: createPrimZoneCorrespondanceLookup({ log }),
   snapshot: createPrimTrafficReports({ apiKey, log }),
   stopMonitoring: createPrimSiriStopMonitoring({ apiKey, log }),
   maxCandidates: result.config.maxCandidates,

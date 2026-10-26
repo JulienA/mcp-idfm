@@ -12,6 +12,7 @@ import {
   type StopIdentityResult,
   type ZoneDarret,
   type ZoneDarretFiche,
+  type ZoneDeCorrespondance,
 } from "../domain/index.js";
 import {
   createReferentialCache,
@@ -32,12 +33,17 @@ export type {
   StopIdentityResult,
   ZoneDarret,
   ZoneDarretFiche,
+  ZoneDeCorrespondance,
 } from "../domain/index.js";
 export { SOURCE } from "../domain/index.js";
 
 export type NavitiaLookup = {
   searchLines(query: string): Promise<Ligne[]>;
   searchStops(query: string): Promise<ZoneDarret[]>;
+};
+
+export type CorrespondanceLookup = {
+  search(query: string): Promise<ZoneDeCorrespondance[]>;
 };
 
 export type StopMonitoring = {
@@ -163,6 +169,7 @@ function decideMatches<T>(
 
 export function createApplication(deps: {
   lookup: NavitiaLookup;
+  correspondances?: CorrespondanceLookup;
   clock?: Clock;
   snapshot?: InfoTraficSnapshot;
   stopMonitoring?: StopMonitoring;
@@ -181,8 +188,15 @@ export function createApplication(deps: {
       throw new Error("SIRI stop-monitoring adapter is required");
     },
   };
+  const correspondances = deps.correspondances ?? {
+    async search(): Promise<ZoneDeCorrespondance[]> {
+      throw new Error("Zone de correspondance lookup is required");
+    },
+  };
   const lineCache = createReferentialCache<Ligne[]>(epochMs);
   const stopCache = createReferentialCache<ZoneDarret[]>(epochMs);
+  const correspondanceCache =
+    createReferentialCache<ZoneDeCorrespondance[]>(epochMs);
   let snapshotState:
     | { messages: InfoTraficMessage[]; updatedAt: Date; stale: boolean }
     | undefined;
@@ -328,13 +342,41 @@ export function createApplication(deps: {
     },
 
     async prochainPassage(
-      arret: string,
+      zone: string,
       ligneQuery?: string,
     ): Promise<ProchainPassageResult> {
-      const stopResult = await app.getStopId(arret);
-      if (stopResult.status !== "ok") {
-        return stopResult;
+      const normalized = normalizeStopQuery(zone);
+      if (!normalized) {
+        return {
+          status: "not_found",
+          message: "Aucune Zone de correspondance correspondante",
+          source: SOURCE,
+        };
       }
+      let matches: ZoneDeCorrespondance[];
+      try {
+        matches = await cachedSearch(correspondanceCache, normalized, () =>
+          correspondances.search(normalized),
+        );
+      } catch {
+        throw new LookupUnavailableError();
+      }
+      const decision = decideMatches(matches, maxCandidates);
+      if (decision.kind === "none") {
+        return {
+          status: "not_found",
+          message: "Aucune Zone de correspondance correspondante",
+          source: SOURCE,
+        };
+      }
+      if (decision.kind === "many") {
+        return {
+          status: "needs_clarification",
+          candidates: toCandidates(decision.items),
+          source: SOURCE,
+        };
+      }
+      const zones = decision.kind === "one" ? [decision.item] : decision.items;
       let allowedLigneIds: Set<string> | undefined;
       if (ligneQuery !== undefined && ligneQuery.trim()) {
         const lineResult = await app.getLineId(ligneQuery);
@@ -344,21 +386,19 @@ export function createApplication(deps: {
         const lignes = "fiche" in lineResult ? [lineResult.fiche] : lineResult.fiches;
         allowedLigneIds = new Set(lignes.map((ligne) => ligne.id));
       }
-      const stops =
-        "fiche" in stopResult ? [stopResult.fiche] : stopResult.fiches;
       type AnnotatedPassage = ProchainPassage & {
         zone: { id: string; label: string };
       };
       let live: AnnotatedPassage[] = [];
       try {
-        for (const stop of stops) {
+        for (const zone of zones) {
           const passages = await stopMonitoring.getPassages(
-            stop.siri_monitoring_ref,
+            zone.siri_monitoring_ref,
           );
           for (const passage of passages) {
             live.push({
               ...passage,
-              zone: { id: stop.id, label: stop.label },
+              zone: { id: zone.id, label: zone.label },
             });
           }
         }
@@ -385,7 +425,7 @@ export function createApplication(deps: {
         const item = {
           expected_at: formatIsoParis(passage.expectedAt),
           statut: passage.statut,
-          zone_darret: passage.zone,
+          zone_de_correspondance: passage.zone,
         };
         if (existing) {
           existing.passages.push(item);

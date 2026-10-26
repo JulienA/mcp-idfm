@@ -9,11 +9,15 @@ A commercial transport line on the Île-de-France network, identified by its ré
 _Avoid_: Navitia URI, SIRI LineRef, route, direction
 
 **Zone d'arrêt**:
-A monomodal stop zone: the boarding points of one mode at a place. v1 grain for next departures.
-_Avoid_: stop, quai, stop_point, pôle, correspondance, ZdC, stop_area as a multimodal hub
+A monomodal stop zone: the boarding points of one mode at a place.
+_Avoid_: stop, quai, stop_point, stop_area
+
+**Zone de correspondance**:
+A multimodal place that groups the Zones d'arrêt where a walking transfer is implicit. Grain of Prochain Passage. The mode shown with it is the référentiel type of that place, so homonyms can be told apart.
+_Avoid_: stop, pôle, hub, quai
 
 **Prochain Passage**:
-A realtime estimated arrival or departure at a Zone d'arrêt.
+A realtime estimated arrival or departure at a Zone de correspondance.
 _Avoid_: horaire théorique, schedule, timetable
 
 **Info Trafic**:

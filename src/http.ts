@@ -99,7 +99,7 @@ async function toolResult(
 
 const MCP_INSTRUCTIONS = [
   "Serveur Île-de-France Mobilités. Pour toute question sur les horaires, les Prochains Passages, le trafic, une Ligne ou un arrêt du réseau IDFM, tu dois appeler un outil. N'invente jamais un horaire ni une perturbation.",
-  'Prochains passages, horaires, temps d\'attente : appelle prochain_passage. Passe le nom de l\'arrêt dans query (ex. "Châtelet") et la Ligne dans ligne si elle est connue (ex. "RER A"). N\'appelle pas get_stop_id avant.',
+  'Prochains passages, horaires, temps d\'attente : appelle prochain_passage. Passe le nom de la Zone de correspondance dans query (ex. "Châtelet") et la Ligne dans ligne si elle est connue (ex. "RER A"). N\'appelle pas get_stop_id avant.',
   'Perturbations, incident, travaux, Info Trafic : appelle get_info_trafic avec le nom de la Ligne (ex. "RER A"). N\'appelle pas get_line_id avant.',
   "get_line_id et get_stop_id servent seulement à afficher un identifiant canonique.",
   "Si un outil répond needs_clarification, présente tous les candidats (id, label, mode) à l'utilisateur, sans en omettre.",
@@ -143,7 +143,7 @@ function registerTools(
     {
       title: "Identifiant de Zone d'arrêt",
       description:
-        "Résout une Zone d'arrêt IDFM en fiche canonique. Utile pour afficher l'identifiant. Inutile avant prochain_passage, qui accepte déjà un nom d'arrêt (ex. Châtelet).",
+        "Résout une Zone d'arrêt IDFM en fiche canonique. Utile pour afficher l'identifiant. Inutile avant prochain_passage, qui résout une Zone de correspondance (ex. Châtelet).",
       annotations: TOOL_ANNOTATIONS,
       inputSchema: fromJsonSchema<{ query: string }>({
         type: "object",
@@ -191,7 +191,7 @@ function registerTools(
     {
       title: "Prochains Passages",
       description:
-        'À appeler dès qu\'un usager demande les Prochains Passages, horaires temps réel ou temps d\'attente à un arrêt d\'Île-de-France. Passe le nom de l\'arrêt dans query (ex. "Châtelet") et la Ligne dans ligne si elle est connue (ex. "RER A"). N\'appelle pas get_stop_id : cet outil résout le nom lui-même.',
+        'À appeler dès qu\'un usager demande les Prochains Passages, horaires temps réel ou temps d\'attente en Île-de-France. Passe le nom de la Zone de correspondance dans query (ex. "Châtelet", "Nation") et la Ligne dans ligne si elle est connue (ex. "RER A"). N\'appelle pas get_stop_id : cet outil résout la zone lui-même.',
       annotations: TOOL_ANNOTATIONS,
       inputSchema: fromJsonSchema<{ query: string; ligne?: string }>({
         type: "object",
@@ -199,7 +199,7 @@ function registerTools(
           query: {
             type: "string",
             description:
-              'Nom ou identifiant de la Zone d\'arrêt (ex. "Châtelet")',
+              'Nom ou identifiant de la Zone de correspondance (ex. "Châtelet", "Nation"). Un identifiant de Zone d\'arrêt est remonté à sa zone.',
           },
           ligne: {
             type: "string",

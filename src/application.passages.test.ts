@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { createApplication } from "./application/index.js";
+import {
+  createApplication,
+  LookupUnavailableError,
+} from "./application/index.js";
 import type {
+  Clock,
+  CorrespondanceLookup,
   Ligne,
   NavitiaLookup,
   ProchainPassage,
   StopMonitoring,
-  ZoneDarret,
+  ZoneDeCorrespondance,
 } from "./application/index.js";
 
 const RER_B: Ligne = {
@@ -24,41 +29,40 @@ const METRO_1: Ligne = {
   navitia_id: "line:IDFM:C01373",
 };
 
-const NATION_METRO: ZoneDarret = {
-  id: "70001",
-  label: "Nation Métro",
+const CHATELET_PARIS: ZoneDeCorrespondance = {
+  id: "71264",
+  label: "Châtelet (Paris 4e)",
   mode: "Métro",
-  siri_monitoring_ref: "STIF:StopArea:SP:70001:",
-  navitia_id: "stop_area:IDFM:70001",
+  siri_monitoring_ref: "STIF:StopArea:SP:71264:",
 };
 
-const NATION_RER: ZoneDarret = {
-  id: "70002",
-  label: "Nation RER",
-  mode: "RER",
-  siri_monitoring_ref: "STIF:StopArea:SP:70002:",
-  navitia_id: "stop_area:IDFM:70002",
+const CHATELET_LES_HALLES: ZoneDeCorrespondance = {
+  id: "474151",
+  label: "Châtelet - Les Halles (Paris 1er)",
+  mode: "Ferroviaire",
+  siri_monitoring_ref: "STIF:StopArea:SP:474151:",
 };
 
-const CHATELET_RER: ZoneDarret = {
-  id: "73641",
-  label: "Châtelet-Les Halles",
-  mode: "RER",
-  siri_monitoring_ref: "STIF:StopArea:SP:73641:",
-  navitia_id: "stop_area:IDFM:73641",
-};
-
-function numberedStops(count: number): ZoneDarret[] {
+function numberedZones(count: number): ZoneDeCorrespondance[] {
   return Array.from({ length: count }, (_, index) => {
-    const id = `8000${index}`;
+    const id = `9000${index}`;
     return {
       id,
       label: `Nation ${index}`,
       mode: "Bus",
       siri_monitoring_ref: `STIF:StopArea:SP:${id}:`,
-      navitia_id: `stop_area:IDFM:${id}`,
     };
   });
+}
+
+function clockAt(iso: string): Clock & { set(next: string): void } {
+  let now = new Date(iso);
+  return {
+    now: () => now,
+    set(next) {
+      now = new Date(next);
+    },
+  };
 }
 
 function numberedBusLignes(count: number): Ligne[] {
@@ -74,7 +78,21 @@ function numberedBusLignes(count: number): Ligne[] {
   });
 }
 
-function fakeLookup(lines: Ligne[], stops: ZoneDarret[] = []): NavitiaLookup {
+function fakeCorrespondances(
+  zones: ZoneDeCorrespondance[],
+): CorrespondanceLookup {
+  return {
+    async search(query) {
+      const q = query.trim().toLowerCase();
+      return zones.filter(
+        (zone) =>
+          zone.id.toLowerCase() === q || zone.label.toLowerCase().includes(q),
+      );
+    },
+  };
+}
+
+function fakeLookup(lines: Ligne[]): NavitiaLookup {
   return {
     async searchLines(query) {
       const q = query.trim().toLowerCase();
@@ -84,12 +102,8 @@ function fakeLookup(lines: Ligne[], stops: ZoneDarret[] = []): NavitiaLookup {
           ligne.label.toLowerCase().includes(q),
       );
     },
-    async searchStops(query) {
-      const q = query.trim().toLowerCase();
-      return stops.filter(
-        (stop) =>
-          stop.id.toLowerCase() === q || stop.label.toLowerCase().includes(q),
-      );
+    async searchStops() {
+      return [];
     },
   };
 }
@@ -105,11 +119,12 @@ function fakeStopMonitoring(
 }
 
 describe("prochain_passage", () => {
-  it("returns live Prochains Passages for a unique Zone d'arrêt", async () => {
+  it("returns live Prochains Passages for a unique Zone de correspondance", async () => {
     const app = createApplication({
-      lookup: fakeLookup([RER_B], [CHATELET_RER]),
+      lookup: fakeLookup([RER_B]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
       stopMonitoring: fakeStopMonitoring({
-        "STIF:StopArea:SP:73641:": [
+        "STIF:StopArea:SP:474151:": [
           {
             ligneId: "C01742",
             ligneLabel: "RER B",
@@ -121,7 +136,7 @@ describe("prochain_passage", () => {
       }),
     });
 
-    const result = await app.prochainPassage("Châtelet-Les Halles");
+    const result = await app.prochainPassage("Châtelet - Les Halles");
     expect(result).toEqual({
       status: "ok",
       groups: [
@@ -132,9 +147,9 @@ describe("prochain_passage", () => {
             {
               expected_at: "2026-07-01T12:04:00+02:00",
               statut: "onTime",
-              zone_darret: {
-                id: "73641",
-                label: "Châtelet-Les Halles",
+              zone_de_correspondance: {
+                id: "474151",
+                label: "Châtelet - Les Halles (Paris 1er)",
               },
             },
           ],
@@ -146,13 +161,14 @@ describe("prochain_passage", () => {
 
   it("states the absence of realtime instead of falling back to a schedule", async () => {
     const app = createApplication({
-      lookup: fakeLookup([RER_B], [CHATELET_RER]),
+      lookup: fakeLookup([RER_B]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
       stopMonitoring: fakeStopMonitoring({
-        "STIF:StopArea:SP:73641:": [],
+        "STIF:StopArea:SP:474151:": [],
       }),
     });
 
-    const result = await app.prochainPassage("Châtelet-Les Halles");
+    const result = await app.prochainPassage("Châtelet - Les Halles");
     expect(result).toEqual({
       status: "ok",
       groups: [],
@@ -163,7 +179,8 @@ describe("prochain_passage", () => {
 
   it("returns an error when SIRI fails with no usable payload", async () => {
     const app = createApplication({
-      lookup: fakeLookup([RER_B], [CHATELET_RER]),
+      lookup: fakeLookup([RER_B]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
       stopMonitoring: {
         async getPassages() {
           throw new Error("PRIM SIRI unavailable");
@@ -171,7 +188,7 @@ describe("prochain_passage", () => {
       },
     });
 
-    const result = await app.prochainPassage("Châtelet-Les Halles");
+    const result = await app.prochainPassage("Châtelet - Les Halles");
     expect(result).toEqual({
       status: "error",
       message: "Impossible de récupérer les Prochains Passages",
@@ -181,9 +198,10 @@ describe("prochain_passage", () => {
 
   it("filters Prochains Passages by an optional Ligne after resolution", async () => {
     const app = createApplication({
-      lookup: fakeLookup([RER_B, METRO_1], [CHATELET_RER]),
+      lookup: fakeLookup([RER_B, METRO_1]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
       stopMonitoring: fakeStopMonitoring({
-        "STIF:StopArea:SP:73641:": [
+        "STIF:StopArea:SP:474151:": [
           {
             ligneId: "C01373",
             ligneLabel: "Métro 1",
@@ -202,7 +220,7 @@ describe("prochain_passage", () => {
       }),
     });
 
-    const result = await app.prochainPassage("Châtelet-Les Halles", "RER B");
+    const result = await app.prochainPassage("Châtelet - Les Halles", "RER B");
     expect(result).toEqual({
       status: "ok",
       groups: [
@@ -213,9 +231,9 @@ describe("prochain_passage", () => {
             {
               expected_at: "2026-07-01T12:04:00+02:00",
               statut: "delayed",
-              zone_darret: {
-                id: "73641",
-                label: "Châtelet-Les Halles",
+              zone_de_correspondance: {
+                id: "474151",
+                label: "Châtelet - Les Halles (Paris 1er)",
               },
             },
           ],
@@ -234,13 +252,14 @@ describe("prochain_passage", () => {
       statut: "onTime",
     }));
     const app = createApplication({
-      lookup: fakeLookup([RER_B], [CHATELET_RER]),
+      lookup: fakeLookup([RER_B]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
       stopMonitoring: fakeStopMonitoring({
-        "STIF:StopArea:SP:73641:": live,
+        "STIF:StopArea:SP:474151:": live,
       }),
     });
 
-    const result = await app.prochainPassage("Châtelet-Les Halles");
+    const result = await app.prochainPassage("Châtelet - Les Halles");
     expect(result).toEqual({
       status: "ok",
       groups: [
@@ -250,9 +269,9 @@ describe("prochain_passage", () => {
           passages: [1, 2, 3, 4, 5].map((minute) => ({
             expected_at: `2026-07-01T12:0${minute}:00+02:00`,
             statut: "onTime",
-            zone_darret: {
-              id: "73641",
-              label: "Châtelet-Les Halles",
+            zone_de_correspondance: {
+              id: "474151",
+              label: "Châtelet - Les Halles (Paris 1er)",
             },
           })),
         },
@@ -263,9 +282,10 @@ describe("prochain_passage", () => {
 
   it("keeps a cancelled Prochain Passage with its Statut de passage", async () => {
     const app = createApplication({
-      lookup: fakeLookup([RER_B], [CHATELET_RER]),
+      lookup: fakeLookup([RER_B]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
       stopMonitoring: fakeStopMonitoring({
-        "STIF:StopArea:SP:73641:": [
+        "STIF:StopArea:SP:474151:": [
           {
             ligneId: "C01742",
             ligneLabel: "RER B",
@@ -284,7 +304,7 @@ describe("prochain_passage", () => {
       }),
     });
 
-    const result = await app.prochainPassage("Châtelet-Les Halles");
+    const result = await app.prochainPassage("Châtelet - Les Halles");
     expect(result).toEqual({
       status: "ok",
       groups: [
@@ -295,9 +315,9 @@ describe("prochain_passage", () => {
             {
               expected_at: "2026-07-01T12:04:00+02:00",
               statut: "cancelled",
-              zone_darret: {
-                id: "73641",
-                label: "Châtelet-Les Halles",
+              zone_de_correspondance: {
+                id: "474151",
+                label: "Châtelet - Les Halles (Paris 1er)",
               },
             },
           ],
@@ -309,9 +329,9 @@ describe("prochain_passage", () => {
             {
               expected_at: "2026-07-01T12:06:00+02:00",
               statut: "early",
-              zone_darret: {
-                id: "73641",
-                label: "Châtelet-Les Halles",
+              zone_de_correspondance: {
+                id: "474151",
+                label: "Châtelet - Les Halles (Paris 1er)",
               },
             },
           ],
@@ -321,11 +341,15 @@ describe("prochain_passage", () => {
     });
   });
 
-  it("unions Prochains Passages of matching Zones d'arrêt and still caps at five", async () => {
+  it("unions Prochains Passages of matching Zones de correspondance and still caps at five", async () => {
     const app = createApplication({
-      lookup: fakeLookup([RER_B, METRO_1], [NATION_METRO, NATION_RER]),
+      lookup: fakeLookup([RER_B, METRO_1]),
+      correspondances: fakeCorrespondances([
+        CHATELET_PARIS,
+        CHATELET_LES_HALLES,
+      ]),
       stopMonitoring: fakeStopMonitoring({
-        "STIF:StopArea:SP:70001:": [
+        "STIF:StopArea:SP:71264:": [
           {
             ligneId: "C01373",
             ligneLabel: "Métro 1",
@@ -348,7 +372,7 @@ describe("prochain_passage", () => {
             statut: "onTime",
           },
         ],
-        "STIF:StopArea:SP:70002:": [
+        "STIF:StopArea:SP:474151:": [
           {
             ligneId: "C01742",
             ligneLabel: "RER B",
@@ -381,7 +405,7 @@ describe("prochain_passage", () => {
       }),
     });
 
-    const result = await app.prochainPassage("Nation");
+    const result = await app.prochainPassage("Châtelet");
     expect(result).toEqual({
       status: "ok",
       groups: [
@@ -392,7 +416,10 @@ describe("prochain_passage", () => {
             {
               expected_at: "2026-07-01T12:01:00+02:00",
               statut: "onTime",
-              zone_darret: { id: "70001", label: "Nation Métro" },
+              zone_de_correspondance: {
+                id: "71264",
+                label: "Châtelet (Paris 4e)",
+              },
             },
           ],
         },
@@ -403,12 +430,18 @@ describe("prochain_passage", () => {
             {
               expected_at: "2026-07-01T12:02:00+02:00",
               statut: "cancelled",
-              zone_darret: { id: "70002", label: "Nation RER" },
+              zone_de_correspondance: {
+                id: "474151",
+                label: "Châtelet - Les Halles (Paris 1er)",
+              },
             },
             {
               expected_at: "2026-07-01T12:05:00+02:00",
               statut: "departed",
-              zone_darret: { id: "70002", label: "Nation RER" },
+              zone_de_correspondance: {
+                id: "474151",
+                label: "Châtelet - Les Halles (Paris 1er)",
+              },
             },
           ],
         },
@@ -419,7 +452,10 @@ describe("prochain_passage", () => {
             {
               expected_at: "2026-07-01T12:03:00+02:00",
               statut: "arrived",
-              zone_darret: { id: "70002", label: "Nation RER" },
+              zone_de_correspondance: {
+                id: "474151",
+                label: "Châtelet - Les Halles (Paris 1er)",
+              },
             },
           ],
         },
@@ -430,7 +466,10 @@ describe("prochain_passage", () => {
             {
               expected_at: "2026-07-01T12:04:00+02:00",
               statut: "delayed",
-              zone_darret: { id: "70001", label: "Nation Métro" },
+              zone_de_correspondance: {
+                id: "71264",
+                label: "Châtelet (Paris 4e)",
+              },
             },
           ],
         },
@@ -439,9 +478,10 @@ describe("prochain_passage", () => {
     });
   });
 
-  it("returns not found for an empty Zone d'arrêt query without calling SIRI", async () => {
+  it("returns not found for an empty Zone de correspondance query without calling SIRI", async () => {
     const app = createApplication({
-      lookup: fakeLookup([RER_B], [CHATELET_RER]),
+      lookup: fakeLookup([RER_B]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
       stopMonitoring: {
         async getPassages() {
           throw new Error("SIRI should not be called");
@@ -452,15 +492,16 @@ describe("prochain_passage", () => {
     const result = await app.prochainPassage("  ");
     expect(result).toEqual({
       status: "not_found",
-      message: "Aucune Zone d'arrêt correspondante",
+      message: "Aucune Zone de correspondance correspondante",
       source: "Île-de-France Mobilités",
     });
   });
 
-  it("asks for clarification when more than five Zones d'arrêt match", async () => {
-    const stops = numberedStops(6);
+  it("asks for clarification when more than five Zones de correspondance match", async () => {
+    const zones = numberedZones(6);
     const app = createApplication({
-      lookup: fakeLookup([], stops),
+      lookup: fakeLookup([]),
+      correspondances: fakeCorrespondances(zones),
       stopMonitoring: {
         async getPassages() {
           throw new Error("SIRI should not be called");
@@ -471,7 +512,7 @@ describe("prochain_passage", () => {
     const result = await app.prochainPassage("Nation");
     expect(result).toEqual({
       status: "needs_clarification",
-      candidates: stops.map(({ id, label, mode }) => ({ id, label, mode })),
+      candidates: zones.map(({ id, label, mode }) => ({ id, label, mode })),
       source: "Île-de-France Mobilités",
     });
   });
@@ -479,7 +520,8 @@ describe("prochain_passage", () => {
   it("asks for clarification when more than five Lignes match the optional filter", async () => {
     const lignes = numberedBusLignes(6);
     const app = createApplication({
-      lookup: fakeLookup(lignes, [CHATELET_RER]),
+      lookup: fakeLookup(lignes),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
       stopMonitoring: {
         async getPassages() {
           throw new Error("SIRI should not be called");
@@ -487,7 +529,7 @@ describe("prochain_passage", () => {
       },
     });
 
-    const result = await app.prochainPassage("Châtelet-Les Halles", "Bus");
+    const result = await app.prochainPassage("Châtelet - Les Halles", "Bus");
     expect(result).toEqual({
       status: "needs_clarification",
       candidates: lignes.map(({ id, label, mode }) => ({ id, label, mode })),
@@ -497,7 +539,8 @@ describe("prochain_passage", () => {
 
   it("returns not found when the optional Ligne matches nothing", async () => {
     const app = createApplication({
-      lookup: fakeLookup([RER_B], [CHATELET_RER]),
+      lookup: fakeLookup([RER_B]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
       stopMonitoring: {
         async getPassages() {
           throw new Error("SIRI should not be called");
@@ -506,7 +549,7 @@ describe("prochain_passage", () => {
     });
 
     const result = await app.prochainPassage(
-      "Châtelet-Les Halles",
+      "Châtelet - Les Halles",
       "Ligne inexistante",
     );
     expect(result).toEqual({
@@ -518,7 +561,7 @@ describe("prochain_passage", () => {
 
   it("does not cache live Prochains Passages", async () => {
     const catalog: Record<string, ProchainPassage[]> = {
-      "STIF:StopArea:SP:73641:": [
+      "STIF:StopArea:SP:474151:": [
         {
           ligneId: "C01742",
           ligneLabel: "RER B",
@@ -529,12 +572,13 @@ describe("prochain_passage", () => {
       ],
     };
     const app = createApplication({
-      lookup: fakeLookup([RER_B], [CHATELET_RER]),
+      lookup: fakeLookup([RER_B]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
       stopMonitoring: fakeStopMonitoring(catalog),
     });
 
-    await app.prochainPassage("Châtelet-Les Halles");
-    catalog["STIF:StopArea:SP:73641:"] = [
+    await app.prochainPassage("Châtelet - Les Halles");
+    catalog["STIF:StopArea:SP:474151:"] = [
       {
         ligneId: "C01742",
         ligneLabel: "RER B",
@@ -544,7 +588,7 @@ describe("prochain_passage", () => {
       },
     ];
 
-    const result = await app.prochainPassage("Châtelet-Les Halles");
+    const result = await app.prochainPassage("Châtelet - Les Halles");
     expect(result).toEqual({
       status: "ok",
       groups: [
@@ -555,9 +599,9 @@ describe("prochain_passage", () => {
             {
               expected_at: "2026-07-01T12:09:00+02:00",
               statut: "delayed",
-              zone_darret: {
-                id: "73641",
-                label: "Châtelet-Les Halles",
+              zone_de_correspondance: {
+                id: "474151",
+                label: "Châtelet - Les Halles (Paris 1er)",
               },
             },
           ],
@@ -565,5 +609,175 @@ describe("prochain_passage", () => {
       ],
       source: "Île-de-France Mobilités",
     });
+  });
+
+  it("asks SIRI for the Zone de correspondance of a Zone d'arrêt id", async () => {
+    const app = createApplication({
+      lookup: fakeLookup([METRO_1]),
+      correspondances: {
+        async search(query) {
+          return query === "42587" ? [CHATELET_PARIS] : [];
+        },
+      },
+      stopMonitoring: fakeStopMonitoring({
+        "STIF:StopArea:SP:71264:": [
+          {
+            ligneId: "C01373",
+            ligneLabel: "Métro 1",
+            destination: "La Défense",
+            expectedAt: new Date("2026-07-01T10:04:00.000Z"),
+            statut: "onTime",
+          },
+        ],
+      }),
+    });
+
+    const result = await app.prochainPassage("stop_area:IDFM:42587");
+    expect(result).toEqual({
+      status: "ok",
+      groups: [
+        {
+          ligne: { id: "C01373", label: "Métro 1" },
+          destination: "La Défense",
+          passages: [
+            {
+              expected_at: "2026-07-01T12:04:00+02:00",
+              statut: "onTime",
+              zone_de_correspondance: {
+                id: "71264",
+                label: "Châtelet (Paris 4e)",
+              },
+            },
+          ],
+        },
+      ],
+      source: "Île-de-France Mobilités",
+    });
+  });
+
+  it("reuses a referential Zone de correspondance match within 24 hours", async () => {
+    const catalog = { zones: [CHATELET_LES_HALLES] };
+    const clock = clockAt("2026-10-26T10:00:00Z");
+    const app = createApplication({
+      lookup: fakeLookup([RER_B]),
+      correspondances: {
+        async search() {
+          return catalog.zones;
+        },
+      },
+      stopMonitoring: fakeStopMonitoring({
+        "STIF:StopArea:SP:474151:": [
+          {
+            ligneId: "C01742",
+            ligneLabel: "RER B",
+            destination: "Robinson",
+            expectedAt: new Date("2026-07-01T10:04:00.000Z"),
+            statut: "onTime",
+          },
+        ],
+      }),
+      clock,
+    });
+
+    await app.prochainPassage("Châtelet - Les Halles");
+    catalog.zones = [
+      {
+        ...CHATELET_LES_HALLES,
+        label: "Châtelet - Les Halles (renommée)",
+      },
+    ];
+
+    const result = await app.prochainPassage("Châtelet - Les Halles");
+    expect(result).toEqual({
+      status: "ok",
+      groups: [
+        {
+          ligne: { id: "C01742", label: "RER B" },
+          destination: "Robinson",
+          passages: [
+            {
+              expected_at: "2026-07-01T12:04:00+02:00",
+              statut: "onTime",
+              zone_de_correspondance: {
+                id: "474151",
+                label: "Châtelet - Les Halles (Paris 1er)",
+              },
+            },
+          ],
+        },
+      ],
+      source: "Île-de-France Mobilités",
+    });
+  });
+
+  it("refreshes a referential Zone de correspondance match after 24 hours", async () => {
+    const catalog = { zones: [CHATELET_LES_HALLES] };
+    const clock = clockAt("2026-10-26T10:00:00Z");
+    const app = createApplication({
+      lookup: fakeLookup([RER_B]),
+      correspondances: {
+        async search() {
+          return catalog.zones;
+        },
+      },
+      stopMonitoring: fakeStopMonitoring({
+        "STIF:StopArea:SP:474151:": [
+          {
+            ligneId: "C01742",
+            ligneLabel: "RER B",
+            destination: "Robinson",
+            expectedAt: new Date("2026-07-01T10:04:00.000Z"),
+            statut: "onTime",
+          },
+        ],
+      }),
+      clock,
+    });
+
+    await app.prochainPassage("Châtelet - Les Halles");
+    catalog.zones = [
+      {
+        ...CHATELET_LES_HALLES,
+        label: "Châtelet - Les Halles (renommée)",
+      },
+    ];
+    clock.set("2026-10-27T10:00:00Z");
+
+    const result = await app.prochainPassage("Châtelet - Les Halles");
+    expect(result).toEqual({
+      status: "ok",
+      groups: [
+        {
+          ligne: { id: "C01742", label: "RER B" },
+          destination: "Robinson",
+          passages: [
+            {
+              expected_at: "2026-07-01T12:04:00+02:00",
+              statut: "onTime",
+              zone_de_correspondance: {
+                id: "474151",
+                label: "Châtelet - Les Halles (renommée)",
+              },
+            },
+          ],
+        },
+      ],
+      source: "Île-de-France Mobilités",
+    });
+  });
+
+  it("fails when the Zone de correspondance lookup is down", async () => {
+    const app = createApplication({
+      lookup: fakeLookup([RER_B]),
+      correspondances: {
+        async search() {
+          throw new Error("referential down");
+        },
+      },
+    });
+
+    await expect(
+      app.prochainPassage("Châtelet - Les Halles"),
+    ).rejects.toBeInstanceOf(LookupUnavailableError);
   });
 });

@@ -24,6 +24,13 @@ export type ZoneDarretFiche = {
   navitia_id: string;
 };
 
+export type ZoneDeCorrespondance = {
+  id: string;
+  label: string;
+  mode: string;
+  siri_monitoring_ref: string;
+};
+
 export type StatutDePassage =
   | "onTime"
   | "early"
@@ -132,7 +139,7 @@ export type PassageGroup = {
   passages: {
     expected_at: string;
     statut: StatutDePassage;
-    zone_darret: { id: string; label: string };
+    zone_de_correspondance: { id: string; label: string };
   }[];
 };
 

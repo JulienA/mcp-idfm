@@ -108,6 +108,7 @@ describe("http adapter", () => {
     expect(body).toContain("prochain_passage");
     expect(body).toContain("Ligne");
     expect(body).toContain("Zone d'arrêt");
+    expect(body).toContain("Zone de correspondance");
     expect(body).toContain("Info Trafic");
     expect(body).toContain("Prochains Passages");
     expect(body).toContain("Châtelet");
