@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] `get_line_id` / `get_stop_id` accept text, `Cxxxxx`, Navitia ids, and SIRI refs
-- [ ] Ligne fiche: `{ id, label, mode, siri_line_ref, navitia_id }`; Zone d'arrêt fiche: `{ id, label, siri_monitoring_ref, navitia_id }`
-- [ ] 0 match → not found; 1 → one fiche; 2–5 → list (union); >5 → `{ status: "needs_clarification", candidates }` as a successful tool result
-- [ ] Lookup is cached 24h (referential cache, not the Info Trafic snapshot)
-- [ ] Tests drive the application module with a fake Navitia lookup; production uses `/pt_objects` (Ligne) and `/places` (Zone d'arrêt)
-- [ ] Tool descriptions and user-facing strings are French; payloads include `source: "Île-de-France Mobilités"`
+- [x] `get_line_id` / `get_stop_id` accept text, `Cxxxxx`, Navitia ids, and SIRI refs
+- [x] Ligne fiche: `{ id, label, mode, siri_line_ref, navitia_id }`; Zone d'arrêt fiche: `{ id, label, siri_monitoring_ref, navitia_id }`
+- [x] 0 match → not found; 1 → one fiche; 2–5 → list (union); >5 → `{ status: "needs_clarification", candidates }` as a successful tool result
+- [x] Lookup is cached 24h (referential cache, not the Info Trafic snapshot)
+- [x] Tests drive the application module with a fake Navitia lookup; production uses `/pt_objects` (Ligne) and `/places` (Zone d'arrêt)
+- [x] Tool descriptions and user-facing strings are French; payloads include `source: "Île-de-France Mobilités"`

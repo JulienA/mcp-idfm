@@ -1,4 +1,4 @@
-import { McpServer } from "@modelcontextprotocol/server";
+import { fromJsonSchema, McpServer } from "@modelcontextprotocol/server";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import {
   createServer,
@@ -6,7 +6,12 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { getHealth, isOriginAllowed, type Config } from "./application/index.js";
+import {
+  getHealth,
+  isOriginAllowed,
+  type Application,
+  type Config,
+} from "./application/index.js";
 
 function pathname(req: IncomingMessage): string {
   return new URL(req.url ?? "/", "http://localhost").pathname;
@@ -17,11 +22,66 @@ function originHeader(req: IncomingMessage): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function registerIdentityTools(
+  mcpServer: McpServer,
+  identity: Application,
+): void {
+  mcpServer.registerTool(
+    "get_line_id",
+    {
+      description:
+        "Résout une Ligne à partir d'un nom ou d'un identifiant (texte, code Cxxxxx, identifiant Navitia ou référence SIRI).",
+      inputSchema: fromJsonSchema<{ query: string }>({
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Nom ou identifiant de la Ligne",
+          },
+        },
+        required: ["query"],
+      }),
+    },
+    async ({ query }) => {
+      const result = await identity.getLineId(query);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
+      };
+    },
+  );
+
+  mcpServer.registerTool(
+    "get_stop_id",
+    {
+      description:
+        "Résout une Zone d'arrêt à partir d'un nom ou d'un identifiant (texte, identifiant Navitia ou MonitoringRef SIRI).",
+      inputSchema: fromJsonSchema<{ query: string }>({
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Nom ou identifiant de la Zone d'arrêt",
+          },
+        },
+        required: ["query"],
+      }),
+    },
+    async ({ query }) => {
+      const result = await identity.getStopId(query);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
+      };
+    },
+  );
+}
+
 async function handleMcp(
+  identity: Application,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
   const mcpServer = new McpServer({ name: "mcp-idfm", version: "0.1.0" });
+  registerIdentityTools(mcpServer, identity);
   const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
@@ -31,6 +91,7 @@ async function handleMcp(
 
 async function handleRequest(
   config: Config,
+  identity: Application,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -47,7 +108,7 @@ async function handleRequest(
         res.end();
         return;
       }
-      await handleMcp(req, res);
+      await handleMcp(identity, req, res);
       return;
     }
     res.writeHead(404);
@@ -60,9 +121,12 @@ async function handleRequest(
   }
 }
 
-export async function startHttpServer(config: Config): Promise<Server> {
+export async function startHttpServer(
+  config: Config,
+  identity: Application,
+): Promise<Server> {
   const server = createServer((req, res) => {
-    void handleRequest(config, req, res);
+    void handleRequest(config, identity, req, res);
   });
 
   await new Promise<void>((resolve, reject) => {
