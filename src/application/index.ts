@@ -26,6 +26,18 @@ export type NavitiaLookup = {
   searchStops(query: string): Promise<ZoneDarret[]>;
 };
 
+export type LivePassage = {
+  ligneId: string;
+  ligneLabel: string;
+  destination: string;
+  expectedAt: Date;
+  statut: string;
+};
+
+export type StopMonitoring = {
+  getPassages(monitoringRef: string): Promise<LivePassage[]>;
+};
+
 export type Clock = {
   now(): Date;
 };
@@ -128,6 +140,29 @@ export type StopIdentityResult =
       source: typeof SOURCE;
     };
 
+export type PassageGroup = {
+  ligne: { id: string; label: string };
+  destination: string;
+  passages: {
+    expected_at: string;
+    statut: string;
+    zone_darret: { id: string; label: string };
+  }[];
+};
+
+export type ProchainPassageResult =
+  | {
+      status: "ok";
+      groups: PassageGroup[];
+      source: typeof SOURCE;
+      summary?: "Pas de temps réel";
+    }
+  | Exclude<StopIdentityResult, { status: "ok" }>
+  | {
+      status: "error";
+      message: string;
+    };
+
 function toStopFiche(stop: ZoneDarret): ZoneDarretFiche {
   return {
     id: stop.id,
@@ -150,6 +185,29 @@ function normalizeLineQuery(query: string): string {
   return trimmed;
 }
 
+function toParisIso(date: Date): string {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date).map((part) => [part.type, part.value]),
+  );
+  const local = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+  const offsetMin = Math.round((Date.parse(`${local}Z`) - date.getTime()) / 60000);
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const hh = String(Math.floor(abs / 60)).padStart(2, "0");
+  const mm = String(abs % 60).padStart(2, "0");
+  return `${local}${sign}${hh}:${mm}`;
+}
+
 function normalizeStopQuery(query: string): string {
   const trimmed = query.trim();
   const navitia = /^stop_area:IDFM:(.+)$/i.exec(trimmed);
@@ -161,37 +219,6 @@ function normalizeStopQuery(query: string): string {
     return siri[1];
   }
   return trimmed;
-}
-
-function parisOffset(raw: string): string {
-  const withoutGmt = raw.replace(/^GMT/i, "");
-  if (!withoutGmt || withoutGmt === "Z") {
-    return "Z";
-  }
-  const match = /^([+-])(\d{1,2})(?::?(\d{2}))?$/.exec(withoutGmt);
-  if (!match) {
-    return "+00:00";
-  }
-  return `${match[1]}${match[2]!.padStart(2, "0")}:${(match[3] ?? "00").padStart(2, "0")}`;
-}
-
-function formatIsoParis(date: Date): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Paris",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-      timeZoneName: "longOffset",
-    })
-      .formatToParts(date)
-      .map((part) => [part.type, part.value]),
-  );
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${parisOffset(parts.timeZoneName ?? "")}`;
 }
 
 function messageLigneIds(message: InfoTraficMessage): string[] {
@@ -214,15 +241,22 @@ export function createApplication(deps: {
   lookup: NavitiaLookup;
   clock?: Clock;
   snapshot?: InfoTraficSnapshot;
+  stopMonitoring?: StopMonitoring;
 }) {
   const clock = deps.clock ?? { now: () => new Date() };
+  const stopMonitoring = deps.stopMonitoring ?? {
+    async getPassages(): Promise<LivePassage[]> {
+      throw new Error("SIRI stop-monitoring adapter is required");
+    },
+  };
   const lineCache = new Map<string, { matches: Ligne[]; storedAt: number }>();
   const stopCache = new Map<string, { matches: ZoneDarret[]; storedAt: number }>();
   let snapshotState:
     | { messages: InfoTraficMessage[]; updatedAt: Date; stale: boolean }
     | undefined;
 
-  async function getLineId(query: string): Promise<LineIdentityResult> {
+  const app = {
+    async getLineId(query: string): Promise<LineIdentityResult> {
       const normalized = normalizeLineQuery(query);
       if (!normalized) {
         return {
@@ -262,9 +296,8 @@ export function createApplication(deps: {
         };
       }
       return { status: "ok", fiches: matches, source: SOURCE };
-  }
+    },
 
-  return {
     async refreshSnapshot(): Promise<void> {
       if (!deps.snapshot) {
         return;
@@ -284,7 +317,7 @@ export function createApplication(deps: {
     },
 
     async getInfoTrafic(query: string): Promise<InfoTraficResult> {
-      const identity = await getLineId(query);
+      const identity = await app.getLineId(query);
       if (identity.status !== "ok") {
         return identity;
       }
@@ -292,7 +325,7 @@ export function createApplication(deps: {
         throw new SnapshotUnavailableError();
       }
       const ligneIds = new Set(matchedLignes(identity).map((ligne) => ligne.id));
-      const messages = (snapshotState?.messages ?? [])
+      const messages = snapshotState.messages
         .filter((message) =>
           messageLigneIds(message).some((id) => ligneIds.has(id)),
         )
@@ -303,13 +336,11 @@ export function createApplication(deps: {
         ...(messages.length === 0
           ? { summary: "Aucune perturbation" as const }
           : {}),
-        updated_at: formatIsoParis(snapshotState?.updatedAt ?? clock.now()),
-        stale: snapshotState?.stale ?? false,
+        updated_at: toParisIso(snapshotState.updatedAt),
+        stale: snapshotState.stale,
         source: SOURCE,
       };
     },
-
-    getLineId,
 
     getHealth(): Health {
       if (!snapshotState) {
@@ -317,7 +348,7 @@ export function createApplication(deps: {
       }
       return {
         ok: true,
-        trafic_updated_at: formatIsoParis(snapshotState.updatedAt),
+        trafic_updated_at: toParisIso(snapshotState.updatedAt),
         stale: snapshotState.stale,
       };
     },
@@ -363,7 +394,89 @@ export function createApplication(deps: {
       }
       return { status: "ok", fiches: matches.map(toStopFiche), source: SOURCE };
     },
+
+    async prochainPassage(
+      arret: string,
+      ligneQuery?: string,
+    ): Promise<ProchainPassageResult> {
+      const stopResult = await app.getStopId(arret);
+      if (stopResult.status !== "ok") {
+        return stopResult;
+      }
+      let allowedLigneIds: Set<string> | undefined;
+      if (ligneQuery !== undefined && ligneQuery.trim()) {
+        const lineResult = await app.getLineId(ligneQuery);
+        if (lineResult.status !== "ok") {
+          return lineResult;
+        }
+        const lignes = "fiche" in lineResult ? [lineResult.fiche] : lineResult.fiches;
+        allowedLigneIds = new Set(lignes.map((ligne) => ligne.id));
+      }
+      const stops =
+        "fiche" in stopResult ? [stopResult.fiche] : stopResult.fiches;
+      type AnnotatedPassage = LivePassage & {
+        zone: { id: string; label: string };
+      };
+      let live: AnnotatedPassage[] = [];
+      try {
+        for (const stop of stops) {
+          const passages = await stopMonitoring.getPassages(
+            stop.siri_monitoring_ref,
+          );
+          for (const passage of passages) {
+            live.push({
+              ...passage,
+              zone: { id: stop.id, label: stop.label },
+            });
+          }
+        }
+      } catch {
+        return {
+          status: "error",
+          message: "Impossible de récupérer les Prochains Passages",
+        };
+      }
+      if (allowedLigneIds) {
+        live = live.filter((passage) => allowedLigneIds.has(passage.ligneId));
+      }
+      live = [...live]
+        .sort((a, b) => a.expectedAt.getTime() - b.expectedAt.getTime())
+        .slice(0, 5);
+      const groups: PassageGroup[] = [];
+      for (const passage of live) {
+        const existing = groups.find(
+          (group) =>
+            group.ligne.id === passage.ligneId &&
+            group.destination === passage.destination,
+        );
+        const item = {
+          expected_at: toParisIso(passage.expectedAt),
+          statut: passage.statut,
+          zone_darret: passage.zone,
+        };
+        if (existing) {
+          existing.passages.push(item);
+        } else {
+          groups.push({
+            ligne: { id: passage.ligneId, label: passage.ligneLabel },
+            destination: passage.destination,
+            passages: [item],
+          });
+        }
+      }
+      if (groups.length === 0) {
+        return {
+          status: "ok",
+          groups,
+          summary: "Pas de temps réel",
+          source: SOURCE,
+        };
+      }
+      return { status: "ok", groups, source: SOURCE };
+    },
   };
+
+  return app;
 }
 
 export type Application = ReturnType<typeof createApplication>;

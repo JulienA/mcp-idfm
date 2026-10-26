@@ -62,7 +62,7 @@ describe("http adapter", () => {
     expect(await response.text()).toContain("jsonrpc");
   });
 
-  it("lists get_line_id, get_stop_id and get_info_trafic with French descriptions", async () => {
+  it("lists identity, Info Trafic and Prochain Passage tools with French descriptions", async () => {
     const result = boot({
       PRIM_API_KEY: "test-key",
       HOST: "127.0.0.1",
@@ -99,9 +99,11 @@ describe("http adapter", () => {
     expect(body).toContain("get_line_id");
     expect(body).toContain("get_stop_id");
     expect(body).toContain("get_info_trafic");
+    expect(body).toContain("prochain_passage");
     expect(body).toContain("Ligne");
     expect(body).toContain("Zone d'arrêt");
     expect(body).toContain("Info Trafic");
+    expect(body).toContain("Prochains Passages");
   });
 
   it("rejects POST /mcp when Origin does not match HOST", async () => {
