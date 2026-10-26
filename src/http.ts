@@ -73,6 +73,41 @@ function registerIdentityTools(
       };
     },
   );
+
+  mcpServer.registerTool(
+    "prochain_passage",
+    {
+      description:
+        "Retourne les Prochains Passages en temps réel d'une Zone d'arrêt, éventuellement filtrés par Ligne.",
+      inputSchema: fromJsonSchema<{ query: string; ligne?: string }>({
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Nom ou identifiant de la Zone d'arrêt",
+          },
+          ligne: {
+            type: "string",
+            description:
+              "Nom ou identifiant optionnel de la Ligne pour filtrer les passages",
+          },
+        },
+        required: ["query"],
+      }),
+    },
+    async ({ query, ligne }) => {
+      const result = await identity.prochainPassage(query, ligne);
+      if (result.status === "error") {
+        return {
+          isError: true,
+          content: [{ type: "text", text: result.message }],
+        };
+      }
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
+      };
+    },
+  );
 }
 
 async function handleMcp(

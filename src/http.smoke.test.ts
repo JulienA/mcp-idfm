@@ -98,8 +98,10 @@ describe("http adapter", () => {
     const body = await response.text();
     expect(body).toContain("get_line_id");
     expect(body).toContain("get_stop_id");
+    expect(body).toContain("prochain_passage");
     expect(body).toContain("Ligne");
     expect(body).toContain("Zone d'arrêt");
+    expect(body).toContain("Prochains Passages");
   });
 
   it("rejects POST /mcp when Origin does not match HOST", async () => {
