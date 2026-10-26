@@ -11,6 +11,7 @@ export function createLogger(env: NodeJS.ProcessEnv = process.env): Logger {
   return pino({
     name: "mcp-idfm",
     level: env.LOG_LEVEL?.trim() || "info",
+    timestamp: pino.stdTimeFunctions.isoTime,
     redact: {
       paths: ["PRIM_API_KEY", "apiKey", "*.apiKey", "*.PRIM_API_KEY"],
       censor: "[Redacted]",
