@@ -7,8 +7,8 @@ import {
   type ServerResponse,
 } from "node:http";
 import {
-  getHealth,
   isOriginAllowed,
+  SnapshotUnavailableError,
   type Application,
   type Config,
 } from "./application/index.js";
@@ -22,10 +22,7 @@ function originHeader(req: IncomingMessage): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function registerIdentityTools(
-  mcpServer: McpServer,
-  identity: Application,
-): void {
+function registerTools(mcpServer: McpServer, app: Application): void {
   mcpServer.registerTool(
     "get_line_id",
     {
@@ -43,7 +40,7 @@ function registerIdentityTools(
       }),
     },
     async ({ query }) => {
-      const result = await identity.getLineId(query);
+      const result = await app.getLineId(query);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }],
       };
@@ -67,21 +64,55 @@ function registerIdentityTools(
       }),
     },
     async ({ query }) => {
-      const result = await identity.getStopId(query);
+      const result = await app.getStopId(query);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }],
       };
     },
   );
+
+  mcpServer.registerTool(
+    "get_info_trafic",
+    {
+      description:
+        "Retourne l'Info Trafic d'une Ligne à partir d'un nom ou d'un identifiant. Une Ligne est obligatoire.",
+      inputSchema: fromJsonSchema<{ query: string }>({
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Nom ou identifiant de la Ligne",
+          },
+        },
+        required: ["query"],
+      }),
+    },
+    async ({ query }) => {
+      try {
+        const result = await app.getInfoTrafic(query);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      } catch (error) {
+        if (error instanceof SnapshotUnavailableError) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: error.message }],
+          };
+        }
+        throw error;
+      }
+    },
+  );
 }
 
 async function handleMcp(
-  identity: Application,
+  app: Application,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
   const mcpServer = new McpServer({ name: "mcp-idfm", version: "0.1.0" });
-  registerIdentityTools(mcpServer, identity);
+  registerTools(mcpServer, app);
   const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
@@ -91,7 +122,7 @@ async function handleMcp(
 
 async function handleRequest(
   config: Config,
-  identity: Application,
+  app: Application,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -99,7 +130,7 @@ async function handleRequest(
     const path = pathname(req);
     if (req.method === "GET" && path === "/health") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(getHealth()));
+      res.end(JSON.stringify(app.getHealth()));
       return;
     }
     if (req.method === "POST" && path === "/mcp") {
@@ -108,7 +139,7 @@ async function handleRequest(
         res.end();
         return;
       }
-      await handleMcp(identity, req, res);
+      await handleMcp(app, req, res);
       return;
     }
     res.writeHead(404);
@@ -123,10 +154,10 @@ async function handleRequest(
 
 export async function startHttpServer(
   config: Config,
-  identity: Application,
+  app: Application,
 ): Promise<Server> {
   const server = createServer((req, res) => {
-    void handleRequest(config, identity, req, res);
+    void handleRequest(config, app, req, res);
   });
 
   await new Promise<void>((resolve, reject) => {
