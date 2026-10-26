@@ -1,9 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { primFetchInit } from "./prim-fetch.js";
 import { createPrimNavitiaLookup } from "./prim-navitia-lookup.js";
 import { createPrimSiriStopMonitoring } from "./prim-siri-stop-monitoring.js";
 import { createPrimTrafficReports } from "./prim-traffic-reports.js";
 
 const TIMEOUT_MS = 10_000;
+
+describe("PRIM token header", () => {
+  it("uses a Fetch-legal header name that PRIM accepts", () => {
+    const init = primFetchInit("test-key");
+    expect(() => new Headers(init.headers)).not.toThrow();
+    const headers = new Headers(init.headers);
+    expect(headers.get("apiKey")).toBe("test-key");
+  });
+});
 
 function okJson(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200 });
