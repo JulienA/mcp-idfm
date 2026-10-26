@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 HTTP harness
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] `get_line_id` / `get_stop_id` accept text, `Cxxxxx`, Navitia ids, and SIRI refs
 - [x] Ligne fiche: `{ id, label, mode, siri_line_ref, navitia_id }`; Zone d'arrêt fiche: `{ id, label, siri_monitoring_ref, navitia_id }`
@@ -13,6 +13,11 @@
 - [x] Tests drive the application module with a fake Navitia lookup; production uses `/pt_objects` (Ligne) and `/places` (Zone d'arrêt)
 - [x] Tool descriptions and user-facing strings are French; payloads include `source: "Île-de-France Mobilités"`
 
+## Answer
+
+`get_line_id` / `get_stop_id` with 0 / 1 / 2–5 union / >5 clarification and 24h referential cache is on `feat/mcp-idfm-v1` (`b5d28ac`).
+
 ## Comments
 
 Implemented on `feat/mcp-idfm-v1` (`be76a7a`).
+Review fixes merged (`b5d28ac`).

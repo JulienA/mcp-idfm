@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 Résolution d’identité (`get_line_id` / `get_stop_id`)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] `prochain_passage` requires a Zone d'arrêt query; Ligne is optional and filters after resolution
 - [x] Live SIRI unitaire via `MonitoringRef` of the Zone d'arrêt; not cached; no `/stop_schedules` or `/departures` fallback
@@ -15,6 +15,11 @@
 - [x] Tests use a fake SIRI adapter; production is PRIM stop-monitoring
 - [x] French strings, ISO datetimes Europe/Paris, `source: "Île-de-France Mobilités"`
 
+## Answer
+
+`prochain_passage` from live SIRI unitaire (cap 5, cancelled kept including Aimed-only cancelled visits, no theoretical fallback) is on `feat/mcp-idfm-v1` (`b5d28ac`).
+
 ## Comments
 
 Implemented on `feat/mcp-idfm-v1` (`be76a7a`).
+Review fixes merged (`b5d28ac`).

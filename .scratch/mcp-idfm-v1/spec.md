@@ -2,7 +2,7 @@
 
 Status: ready-for-agent
 
-Implemented on `feat/mcp-idfm-v1` (`be76a7a`).
+Implemented on `feat/mcp-idfm-v1` (`b5d28ac`).
 
 ## Problem Statement
 

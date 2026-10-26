@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 Résolution d’identité (`get_line_id` / `get_stop_id`)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] `get_info_trafic` requires a Ligne query; missing query is not a network dump
 - [x] Messages include title, text, Sévérité, cause, application periods, impacted Lignes/stops; envelope has `updated_at` and `stale`
@@ -15,6 +15,11 @@
 - [x] French strings, ISO datetimes Europe/Paris, `source: "Île-de-France Mobilités"`
 - [x] `GET /health` reflects `trafic_updated_at` and `stale`
 
+## Answer
+
+`get_info_trafic` from the in-process `traffic_reports` snapshot (boot + 2 min, stale after a failed refresh, stop-only messages without sibling-Ligne leak) is on `feat/mcp-idfm-v1` (`b5d28ac`).
+
 ## Comments
 
 Implemented on `feat/mcp-idfm-v1` (`be76a7a`).
+Review fixes merged (`b5d28ac`).
