@@ -1,10 +1,10 @@
-import type {
-  InfoTraficMessage,
-  InfoTraficSnapshot,
-  Severite,
-} from "../application/index.js";
-import { canonicalLineId, canonicalStopId } from "../ids.js";
-import { formatIsoParis } from "../iso-paris.js";
+import {
+  canonicalLineId,
+  canonicalStopId,
+  formatIsoParis,
+  type InfoTraficMessage,
+  type Severite,
+} from "../domain/index.js";
 import { primFetchInit } from "./prim-fetch.js";
 
 const PRIM_TRAFFIC_REPORTS_URL =
@@ -34,6 +34,7 @@ type NavitiaStopArea = {
   id?: string;
   name?: string;
   links?: NavitiaLink[];
+  lines?: NavitiaLine[];
 };
 
 type NavitiaPtObject = {
@@ -196,8 +197,14 @@ function toMessages(pages: NavitiaTrafficReportsResponse[]): InfoTraficMessage[]
           .map((link) => link.id)
           .filter((id): id is string => Boolean(id));
         addStop(keys, stop);
-        for (const line of report.lines ?? []) {
-          addLigne(keys, line);
+        const stopLines = stop.lines ?? [];
+        const reportLines = report.lines ?? [];
+        if (stopLines.length > 0) {
+          for (const line of stopLines) {
+            addLigne(keys, line);
+          }
+        } else if (reportLines.length === 1 && reportLines[0]) {
+          addLigne(keys, reportLines[0]);
         }
       }
     }
@@ -278,7 +285,7 @@ function toMessages(pages: NavitiaTrafficReportsResponse[]): InfoTraficMessage[]
 
 export function createPrimTrafficReports(
   options: PrimTrafficReportsOptions,
-): InfoTraficSnapshot {
+): { fetch(): Promise<InfoTraficMessage[]> } {
   const fetchFn = options.fetch ?? fetch;
 
   async function fetchPage(

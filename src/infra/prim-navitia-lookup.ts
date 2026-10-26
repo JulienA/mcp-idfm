@@ -1,5 +1,9 @@
-import type { Ligne, NavitiaLookup, ZoneDarret } from "../application/index.js";
-import { canonicalLineId, canonicalStopId } from "../ids.js";
+import {
+  canonicalLineId,
+  canonicalStopId,
+  type Ligne,
+  type ZoneDarret,
+} from "../domain/index.js";
 import { primFetchInit } from "./prim-fetch.js";
 
 const PRIM_NAVITIA_BASE =
@@ -67,7 +71,10 @@ function toZoneDarret(stopArea: NavitiaStopArea): ZoneDarret | undefined {
 
 export function createPrimNavitiaLookup(
   options: PrimNavitiaLookupOptions,
-): NavitiaLookup {
+): {
+  searchLines(query: string): Promise<Ligne[]>;
+  searchStops(query: string): Promise<ZoneDarret[]>;
+} {
   const fetchFn = options.fetch ?? fetch;
 
   async function getJson(path: string, query: string): Promise<unknown> {

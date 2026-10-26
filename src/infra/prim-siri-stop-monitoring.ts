@@ -1,8 +1,4 @@
-import type {
-  ProchainPassage,
-  StopMonitoring,
-} from "../application/index.js";
-import { canonicalLineId } from "../ids.js";
+import { canonicalLineId, type ProchainPassage } from "../domain/index.js";
 import { primFetchInit } from "./prim-fetch.js";
 
 const PRIM_STOP_MONITORING =
@@ -33,15 +29,34 @@ function siriText(field: unknown): string | undefined {
   return undefined;
 }
 
-function expectedAt(call: Record<string, unknown> | undefined): Date | undefined {
-  const raw =
-    siriText(call?.ExpectedDepartureTime) ??
-    siriText(call?.ExpectedArrivalTime);
+function parseSiriDate(raw: string | undefined): Date | undefined {
   if (!raw) {
     return undefined;
   }
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function callStatut(call: Record<string, unknown> | undefined): string {
+  return siriText(call?.DepartureStatus) ?? siriText(call?.ArrivalStatus) ?? "";
+}
+
+function expectedAt(
+  call: Record<string, unknown> | undefined,
+  statut: string,
+): Date | undefined {
+  const expected = parseSiriDate(
+    siriText(call?.ExpectedDepartureTime) ?? siriText(call?.ExpectedArrivalTime),
+  );
+  if (expected) {
+    return expected;
+  }
+  if (statut !== "cancelled") {
+    return undefined;
+  }
+  return parseSiriDate(
+    siriText(call?.AimedDepartureTime) ?? siriText(call?.AimedArrivalTime),
+  );
 }
 
 function toProchainPassage(visit: unknown): ProchainPassage | undefined {
@@ -58,7 +73,8 @@ function toProchainPassage(visit: unknown): ProchainPassage | undefined {
     return undefined;
   }
   const call = journey.MonitoredCall as Record<string, unknown> | undefined;
-  const when = expectedAt(call);
+  const statut = callStatut(call);
+  const when = expectedAt(call, statut);
   if (!when) {
     return undefined;
   }
@@ -68,16 +84,13 @@ function toProchainPassage(visit: unknown): ProchainPassage | undefined {
     ligneLabel: siriText(journey.PublishedLineName) ?? ligneId,
     destination: siriText(journey.DestinationName) ?? "",
     expectedAt: when,
-    statut:
-      siriText(call?.DepartureStatus) ??
-      siriText(call?.ArrivalStatus) ??
-      "onTime",
+    statut,
   };
 }
 
 export function createPrimSiriStopMonitoring(
   options: PrimSiriStopMonitoringOptions,
-): StopMonitoring {
+): { getPassages(monitoringRef: string): Promise<ProchainPassage[]> } {
   const fetchFn = options.fetch ?? fetch;
 
   return {
