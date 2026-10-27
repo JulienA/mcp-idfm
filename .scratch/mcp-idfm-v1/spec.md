@@ -40,11 +40,11 @@ A Node/TypeScript MCP server over Streamable HTTP. Four tools resolve text or id
 24. As an MCP caller, I want Prochain Passage to be live SIRI estimates, so that I am not given theoretical Navitia times.
 25. As an MCP caller, I want no theoretical fallback when SIRI has no realtime for that Zone de correspondance, so that I am not misled.
 26. As an MCP caller, I want that absence stated clearly, so that I know coverage is partial.
-27. As an MCP caller, I want at most five Prochains Passages, grouped by Ligne and destination, so that the answer stays short.
+27. As an MCP caller, I want up to five Prochains Passages per Ligne and destination (30 overall), grouped, so that a hub still shows several upcoming trains per direction.
 28. As an MCP caller, I want cancelled passages to remain visible with their Statut de passage, so that I do not think a train is still coming.
 29. As an MCP caller, I want Statut de passage values such as on time, early, delayed, cancelled, arrived, or departed, so that I can speak like the feed.
 30. As an MCP caller, I want v1 grain of Prochain Passage to be the Zone de correspondance, so that one place covers the modes that meet there.
-31. As an MCP caller, I want several matching Zones de correspondance (≤5) to union their passages (still capped at five), so that a shared name still answers.
+31. As an MCP caller, I want several matching Zones de correspondance (≤5) to union their passages (still under the per-destination and overall caps), so that a shared name still answers.
 32. As an MCP caller, I want tool descriptions and user-facing strings in French, so that the agent talks like Île-de-France Mobilités.
 33. As an MCP caller, I want datetimes in ISO 8601 with Europe/Paris, so that “dans 4 minutes” is not off by timezone.
 34. As an MCP caller, I want `source: "Île-de-France Mobilités"` on payloads, so that Licence Mobilité attribution is present.
@@ -85,7 +85,7 @@ A Node/TypeScript MCP server over Streamable HTTP. Four tools resolve text or id
 - Match policy: 0 → not found; 1 → proceed; 2–5 → union; >5 → `{ status: "needs_clarification", candidates }`. Same policy on all four tools.
 - `get_info_trafic` argument is mandatory. Never return the full network snapshot to the caller.
 - `prochain_passage` requires a Zone de correspondance query; Ligne is optional and filters passages after resolution.
-- Prochain Passage v1 grain is the Zone de correspondance. Quai-level MonitoringRef stays out. Cap 5 passages, grouped by Ligne + destination. Cancelled stays in the list. Statut de passage comes from SIRI (`onTime`, `early`, `delayed`, `cancelled`, `arrived`, `departed`, and other values the feed sends). Resolution uses the public référentiel des zones de correspondance, cached 24 hours, distinct from the Navitia Zone d'arrêt lookup used by `get_stop_id` (ADR 0003).
+- Prochain Passage v1 grain is the Zone de correspondance. Quai-level MonitoringRef stays out. Already-passed visits are dropped (cancelled stays even if the Aimed/Expected time is past, but upcoming visits fill the cap first). Cap 5 passages per Ligne + destination, 30 overall, then group. Cancelled stays in the list. An empty SIRI payload is `summary: "Pas de temps réel"`; an empty leftover after dropping already-passed visits is just `groups: []`. Statut de passage comes from SIRI (`onTime`, `early`, `delayed`, `cancelled`, `arrived`, `departed`, and other values the feed sends). Resolution uses the public référentiel des zones de correspondance, cached 24 hours, distinct from the Navitia Zone d'arrêt lookup used by `get_stop_id` (ADR 0003).
 - Info Trafic payload per message: title, text, Sévérité, cause, application periods, impacted Lignes and stops. Envelope: `updated_at`, `stale`. Empty list: `messages: []`, `summary: "Aucune perturbation"`.
 - Identity fiches: Ligne `{ id, label, mode, siri_line_ref, navitia_id }`; Zone d'arrêt `{ id, label, siri_monitoring_ref, navitia_id }`.
 - `GET /health` → `{ ok, trafic_updated_at, stale }`. After a PRIM outage with a prior snapshot, Info Trafic answers stay successful with `stale: true`. If PRIM is down and there is no snapshot, that is an MCP error. SIRI failure on `prochain_passage` is an error for that call (no stale passages).
@@ -96,7 +96,7 @@ A Node/TypeScript MCP server over Streamable HTTP. Four tools resolve text or id
 
 - Test external behaviour of the application module only: inputs (text, ids, missing args) → outputs (fiches, messages, passages, clarification, not-found, stale, errors). Do not assert Navitia or SIRI JSON, HTTP framework wiring, or timer internals.
 - Inject fake adapters for: Navitia lookup, Info Trafic snapshot, SIRI stop-monitoring, and a controllable clock/cache. The fakes are the second adapter at those infra seams; production PRIM is the other.
-- Cover: unique match; union of 2–5; clarification >5; required Ligne / required Zone de correspondance; optional Ligne filter on passages; empty Info Trafic = trafic normal; stale snapshot after a failed refresh; no theoretical fallback when SIRI is empty; passage cap and grouping; cancelled included; boot without `PRIM_API_KEY`; health reflects `updated_at` / stale.
+- Cover: unique match; union of 2–5; clarification >5; required Ligne / required Zone de correspondance; optional Ligne filter on passages; empty Info Trafic = trafic normal; stale snapshot after a failed refresh; no theoretical fallback when SIRI is empty; passage cap per destination and grouping; already-passed dropped; cancelled included; boot without `PRIM_API_KEY`; health reflects `updated_at` / stale.
 - Do not make Streamable HTTP the primary test surface. A thin smoke that the tools are registered is enough if it stays cheap; product behaviour stays on the application seam.
 - Prior art: none. Empty repo; this spec defines the first tests.
 

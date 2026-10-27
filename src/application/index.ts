@@ -150,6 +150,8 @@ type MatchDecision<T> =
   | { kind: "many"; items: T[] };
 
 export const DEFAULT_MAX_CANDIDATES = 5;
+export const MAX_PASSAGES_PER_GROUP = 5;
+export const MAX_PASSAGES = 30;
 
 function decideMatches<T>(
   matches: T[],
@@ -412,11 +414,37 @@ export function createApplication(deps: {
       if (allowedLigneIds) {
         live = live.filter((passage) => allowedLigneIds.has(passage.ligneId));
       }
-      live = [...live]
-        .sort((a, b) => a.expectedAt.getTime() - b.expectedAt.getTime())
-        .slice(0, 5);
-      const groups: PassageGroup[] = [];
+      const hadRealtime = live.length > 0;
+      const nowMs = clock.now().getTime();
+      live = live.filter(
+        (passage) =>
+          passage.expectedAt.getTime() >= nowMs ||
+          passage.statut.toLowerCase() === "cancelled",
+      );
+      live.sort((a, b) => {
+        const aPast = a.expectedAt.getTime() < nowMs ? 1 : 0;
+        const bPast = b.expectedAt.getTime() < nowMs ? 1 : 0;
+        if (aPast !== bPast) {
+          return aPast - bPast;
+        }
+        return a.expectedAt.getTime() - b.expectedAt.getTime();
+      });
+      const perGroup = new Map<string, number>();
+      const selected: AnnotatedPassage[] = [];
       for (const passage of live) {
+        if (selected.length >= MAX_PASSAGES) {
+          break;
+        }
+        const key = `${passage.ligneId}\0${passage.destination}`;
+        const count = perGroup.get(key) ?? 0;
+        if (count >= MAX_PASSAGES_PER_GROUP) {
+          continue;
+        }
+        perGroup.set(key, count + 1);
+        selected.push(passage);
+      }
+      const groups: PassageGroup[] = [];
+      for (const passage of selected) {
         const existing = groups.find(
           (group) =>
             group.ligne.id === passage.ligneId &&
@@ -441,7 +469,7 @@ export function createApplication(deps: {
         return {
           status: "ok",
           groups,
-          summary: "Pas de temps réel",
+          ...(hadRealtime ? {} : { summary: "Pas de temps réel" }),
           source: SOURCE,
         };
       }
