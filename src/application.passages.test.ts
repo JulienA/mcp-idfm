@@ -453,6 +453,82 @@ describe("prochain_passage", () => {
     });
   });
 
+  it("honours a configured per-destination Prochain Passage cap", async () => {
+    const live = [1, 2, 3, 4].map((minute) => ({
+      ligneId: "C01742",
+      ligneLabel: "RER B",
+      destination: "Robinson",
+      expectedAt: new Date(`2026-07-01T10:0${minute}:00.000Z`),
+      statut: "onTime",
+    }));
+    const app = passagesApp({
+      lookup: fakeLookup([RER_B]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
+      stopMonitoring: fakeStopMonitoring({
+        "STIF:StopArea:SP:474151:": live,
+      }),
+      maxPassagesPerGroup: 2,
+    });
+
+    const result = await app.prochainPassage("Châtelet - Les Halles");
+    expect(result).toEqual({
+      status: "ok",
+      groups: [
+        {
+          ligne: { id: "C01742", label: "RER B" },
+          destination: "Robinson",
+          passages: [1, 2].map((minute) => ({
+            expected_at: `2026-07-01T12:0${minute}:00+02:00`,
+            statut: "onTime",
+            zone_de_correspondance: {
+              id: "474151",
+              label: "Châtelet - Les Halles (Paris 1er)",
+            },
+          })),
+        },
+      ],
+      source: "Île-de-France Mobilités",
+    });
+  });
+
+  it("honours a configured overall Prochain Passage cap", async () => {
+    const destinations = ["Robinson", "Mitry-Claye", "Saint-Rémy-lès-Chevreuse"];
+    const app = passagesApp({
+      lookup: fakeLookup([RER_B]),
+      correspondances: fakeCorrespondances([CHATELET_LES_HALLES]),
+      stopMonitoring: fakeStopMonitoring({
+        "STIF:StopArea:SP:474151:": destinations.map((destination, index) => ({
+          ligneId: "C01742",
+          ligneLabel: "RER B",
+          destination,
+          expectedAt: new Date(`2026-07-01T10:0${index + 1}:00.000Z`),
+          statut: "onTime",
+        })),
+      }),
+      maxPassages: 2,
+    });
+
+    const result = await app.prochainPassage("Châtelet - Les Halles");
+    expect(result).toEqual({
+      status: "ok",
+      groups: destinations.slice(0, 2).map((destination, index) => ({
+        ligne: { id: "C01742", label: "RER B" },
+        destination,
+        passages: [
+          {
+            expected_at: `2026-07-01T12:0${index + 1}:00+02:00`,
+            statut: "onTime",
+            zone_de_correspondance: {
+              id: "474151",
+              label: "Châtelet - Les Halles (Paris 1er)",
+            },
+          },
+        ],
+      })),
+      source: "Île-de-France Mobilités",
+    });
+  });
+
   it("returns at most 30 Prochains Passages across destinations", async () => {
     const destinations = Array.from(
       { length: 31 },

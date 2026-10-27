@@ -8,7 +8,7 @@
 
 - [x] `prochain_passage` requires a Zone de correspondance query; Ligne is optional and filters after resolution
 - [x] Live SIRI unitaire via `MonitoringRef` of the Zone de correspondance (`STIF:StopArea:SP:{ZdCId}:`); a Zone d'arrêt id is rolled up; not cached; no `/stop_schedules` or `/departures` fallback
-- [x] At most 5 passages per Ligne + destination (30 overall), grouped; already-passed dropped; cancelled (and other Statut de passage values from the feed) remain visible, including cancelled in the past
+- [x] At most `MAX_PASSAGES_PER_GROUP` (default 5) per Ligne + destination and `MAX_PASSAGES` (default 30) overall, grouped; already-passed dropped; cancelled (and other Statut de passage values from the feed) remain visible, including cancelled in the past
 - [x] No SIRI realtime for a resolved Zone de correspondance → successful outcome stating the absence, not an MCP error and not theoretical times
 - [x] 0 / 1 / 2–5 union / >5 clarification follow ticket 02; union of zones still respects the per-destination and overall caps
 - [x] SIRI failure with no usable payload → MCP error for that call (no stale passages)

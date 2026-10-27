@@ -33,6 +33,8 @@ log.info(
     host: result.config.host,
     port: result.config.port,
     maxCandidates: result.config.maxCandidates,
+    maxPassagesPerGroup: result.config.maxPassagesPerGroup,
+    maxPassages: result.config.maxPassages,
   },
   "booted",
 );
@@ -44,6 +46,8 @@ const app = createApplication({
   snapshot: createPrimTrafficReports({ apiKey, log }),
   stopMonitoring: createPrimSiriStopMonitoring({ apiKey, log }),
   maxCandidates: result.config.maxCandidates,
+  maxPassagesPerGroup: result.config.maxPassagesPerGroup,
+  maxPassages: result.config.maxPassages,
 });
 
 async function refreshAndLog(): Promise<void> {

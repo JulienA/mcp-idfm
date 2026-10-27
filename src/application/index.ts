@@ -150,8 +150,8 @@ type MatchDecision<T> =
   | { kind: "many"; items: T[] };
 
 export const DEFAULT_MAX_CANDIDATES = 5;
-export const MAX_PASSAGES_PER_GROUP = 5;
-export const MAX_PASSAGES = 30;
+export const DEFAULT_MAX_PASSAGES_PER_GROUP = 5;
+export const DEFAULT_MAX_PASSAGES = 30;
 
 function decideMatches<T>(
   matches: T[],
@@ -176,13 +176,18 @@ export function createApplication(deps: {
   snapshot?: InfoTraficSnapshot;
   stopMonitoring?: StopMonitoring;
   maxCandidates?: number;
+  maxPassagesPerGroup?: number;
+  maxPassages?: number;
 }) {
-  const maxCandidates =
-    deps.maxCandidates !== undefined &&
-    Number.isSafeInteger(deps.maxCandidates) &&
-    deps.maxCandidates >= 1
-      ? deps.maxCandidates
-      : DEFAULT_MAX_CANDIDATES;
+  const maxCandidates = positiveInt(
+    deps.maxCandidates,
+    DEFAULT_MAX_CANDIDATES,
+  );
+  const maxPassagesPerGroup = positiveInt(
+    deps.maxPassagesPerGroup,
+    DEFAULT_MAX_PASSAGES_PER_GROUP,
+  );
+  const maxPassages = positiveInt(deps.maxPassages, DEFAULT_MAX_PASSAGES);
   const clock = deps.clock ?? { now: () => new Date() };
   const epochMs = () => clock.now().getTime();
   const stopMonitoring = deps.stopMonitoring ?? {
@@ -432,12 +437,12 @@ export function createApplication(deps: {
       const perGroup = new Map<string, number>();
       const selected: AnnotatedPassage[] = [];
       for (const passage of live) {
-        if (selected.length >= MAX_PASSAGES) {
+        if (selected.length >= maxPassages) {
           break;
         }
         const key = `${passage.ligneId}\0${passage.destination}`;
         const count = perGroup.get(key) ?? 0;
-        if (count >= MAX_PASSAGES_PER_GROUP) {
+        if (count >= maxPassagesPerGroup) {
           continue;
         }
         perGroup.set(key, count + 1);
@@ -487,6 +492,8 @@ export type Config = {
   host: string;
   port: number;
   maxCandidates: number;
+  maxPassagesPerGroup: number;
+  maxPassages: number;
 };
 
 export type BootResult =
@@ -516,9 +523,20 @@ export function isOriginAllowed(
   return allowed.has(origin);
 }
 
-function parseMaxCandidates(value: string | undefined): number | undefined {
+function positiveInt(value: number | undefined, fallback: number): number {
+  return value !== undefined &&
+    Number.isSafeInteger(value) &&
+    value >= 1
+    ? value
+    : fallback;
+}
+
+function parsePositiveInteger(
+  value: string | undefined,
+  fallback: number,
+): number | undefined {
   if (value === undefined) {
-    return DEFAULT_MAX_CANDIDATES;
+    return fallback;
   }
   const trimmed = value.trim();
   if (!/^[1-9]\d*$/.test(trimmed)) {
@@ -535,12 +553,37 @@ export function boot(env: NodeJS.ProcessEnv): BootResult {
   if (!env.PRIM_API_KEY?.trim()) {
     return { ok: false, exitCode: 1, message: "PRIM_API_KEY is missing" };
   }
-  const maxCandidates = parseMaxCandidates(env.MAX_CANDIDATES);
+  const maxCandidates = parsePositiveInteger(
+    env.MAX_CANDIDATES,
+    DEFAULT_MAX_CANDIDATES,
+  );
   if (maxCandidates === undefined) {
     return {
       ok: false,
       exitCode: 1,
       message: "MAX_CANDIDATES must be a positive integer",
+    };
+  }
+  const maxPassagesPerGroup = parsePositiveInteger(
+    env.MAX_PASSAGES_PER_GROUP,
+    DEFAULT_MAX_PASSAGES_PER_GROUP,
+  );
+  if (maxPassagesPerGroup === undefined) {
+    return {
+      ok: false,
+      exitCode: 1,
+      message: "MAX_PASSAGES_PER_GROUP must be a positive integer",
+    };
+  }
+  const maxPassages = parsePositiveInteger(
+    env.MAX_PASSAGES,
+    DEFAULT_MAX_PASSAGES,
+  );
+  if (maxPassages === undefined) {
+    return {
+      ok: false,
+      exitCode: 1,
+      message: "MAX_PASSAGES must be a positive integer",
     };
   }
   return {
@@ -550,6 +593,8 @@ export function boot(env: NodeJS.ProcessEnv): BootResult {
       host: env.HOST ?? "localhost",
       port: env.PORT ? Number(env.PORT) : 3000,
       maxCandidates,
+      maxPassagesPerGroup,
+      maxPassages,
     },
   };
 }

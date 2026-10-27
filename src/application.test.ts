@@ -115,6 +115,77 @@ describe("boot", () => {
       expect(result.message).toBe("MAX_CANDIDATES must be a positive integer");
     }
   });
+
+  it("defaults MAX_PASSAGES_PER_GROUP to 5", () => {
+    const result = boot({ PRIM_API_KEY: "test-key" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+    expect(result.config.maxPassagesPerGroup).toBe(5);
+  });
+
+  it("uses MAX_PASSAGES_PER_GROUP from the environment", () => {
+    const result = boot({
+      PRIM_API_KEY: "test-key",
+      MAX_PASSAGES_PER_GROUP: "3",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+    expect(result.config.maxPassagesPerGroup).toBe(3);
+  });
+
+  it("exits non-zero when MAX_PASSAGES_PER_GROUP is not a positive integer", () => {
+    for (const value of ["0", "-1", "1.5", "abc", " ", "9007199254740993"]) {
+      const result = boot({
+        PRIM_API_KEY: "test-key",
+        MAX_PASSAGES_PER_GROUP: value,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) {
+        throw new Error(`expected boot to fail for ${value}`);
+      }
+      expect(result.exitCode).not.toBe(0);
+      expect(result.message).toBe(
+        "MAX_PASSAGES_PER_GROUP must be a positive integer",
+      );
+    }
+  });
+
+  it("defaults MAX_PASSAGES to 30", () => {
+    const result = boot({ PRIM_API_KEY: "test-key" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+    expect(result.config.maxPassages).toBe(30);
+  });
+
+  it("uses MAX_PASSAGES from the environment", () => {
+    const result = boot({
+      PRIM_API_KEY: "test-key",
+      MAX_PASSAGES: "12",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+    expect(result.config.maxPassages).toBe(12);
+  });
+
+  it("exits non-zero when MAX_PASSAGES is not a positive integer", () => {
+    for (const value of ["0", "-1", "1.5", "abc", " ", "9007199254740993"]) {
+      const result = boot({ PRIM_API_KEY: "test-key", MAX_PASSAGES: value });
+      expect(result.ok).toBe(false);
+      if (result.ok) {
+        throw new Error(`expected boot to fail for ${value}`);
+      }
+      expect(result.exitCode).not.toBe(0);
+      expect(result.message).toBe("MAX_PASSAGES must be a positive integer");
+    }
+  });
 });
 
 describe("health", () => {

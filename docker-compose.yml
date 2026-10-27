@@ -9,4 +9,6 @@ services:
       PORT: ${PORT:-3000}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       MAX_CANDIDATES: ${MAX_CANDIDATES:-11}
+      MAX_PASSAGES_PER_GROUP: ${MAX_PASSAGES_PER_GROUP:-5}
+      MAX_PASSAGES: ${MAX_PASSAGES:-30}
     restart: unless-stopped
