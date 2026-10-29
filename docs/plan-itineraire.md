@@ -2,9 +2,22 @@
 
 Plan d'implémentation, pas le code. Décision de forme d'abord, puis ce que l'agent d'implémentation doit construire, dans cet ordre.
 
-**Décision.** Un seul outil MCP, `itineraire`. Il résout les deux extrémités (Zone d'arrêt, adresse ou `longitude;latitude`) puis appelle `GET /marketplace/v2/navitia/journeys`. Les horaires sont **théoriques**. Le temps réel reste `prochain_passage`. Les perturbations restent `get_info_trafic`.
+**Décision.** Un seul outil MCP, `itineraire` (titre **Itinéraire**). Il résout les deux extrémités (Zone d'arrêt, adresse ou `longitude;latitude`) puis appelle `GET /marketplace/v2/navitia/journeys` avec `data_freshness=realtime`. Le calcul **prend les perturbations en compte** pour construire le chemin. Ça ne remplace pas `prochain_passage` (SIRI à une Zone de correspondance) ni `get_info_trafic` (texte des messages). Spec : `.scratch/itineraire/spec.md`. ADR : `docs/adr/0004-itineraire.md`.
 
-Ce document sert de contrat pour l'implémentation. Tant qu'une question ouverte de Julien n'a pas de réponse, l'implémentation s'arrête au palier qui en dépend (surtout le palier 0 : accès de la clé).
+## Décisions Julien (29 oct. 2026, Europe/Paris)
+
+| Question | Décision |
+| --- | --- |
+| Clé | `PRIM_API_KEY` ajoutée aux secrets de l'environnement Cloud. **Pas visible dans cet agent déjà démarré** — un secret d'environnement n'est injecté qu'au boot suivant. Palier 0 (GET live 200 vs 403) à passer au prochain run. |
+| Fraîcheur | `data_freshness=realtime` (Julien accepte aussi `adapted_schedule`). Navitia : realtime **inclut** l'offre adaptée. Payload `horaires: "temps_reel"`. Pas `base_schedule`. |
+| Quota | Palier déjà augmenté. Plus une contrainte de livraison. Toujours pas de polling `/journeys`. |
+| Timeout | **Global 50 s**, env `PRIM_FETCH_TIMEOUT_MS` (défaut 50000). Tous les appels `primRequest` (lookup, traffic_reports, SIRI, journeys). |
+| Nom | **Itinéraire** — identifiant d'outil `itineraire` (ASCII, comme `prochain_passage`). |
+| Spec | Nouveau slug `.scratch/itineraire/`. |
+
+Ambiguïté 2–5, types de lieux (stop + adresse + coordonnées), Info Trafic hors Étapes : inchangés (clarifier, pas d'union ; pas de POI/commune ; l'agent rappelle `get_info_trafic`).
+
+Ce document reste le contrat d'implémentation. Le palier 0 live n'est pas vert **dans cette VM**. Spec, ADR et glossaire du palier 1 sont écrits.
 
 ## Synthèse de forme
 
@@ -19,7 +32,7 @@ Deux formes ont été dessinées.
 
 **Base : A.** C'est le plus petit diff qui répond à « comment aller de X à Y » sans forcer l'agent à enchaîner deux outils. Les outils métier v1 résolvent déjà le texte eux-mêmes (spec v1, stories 3 et 6). Un second outil de géocodage casse cette habitude et déplace la règle « ne pas faire le produit cartésien » dans l'agent.
 
-**Greffé de B.** Marquer `horaires: "théoriques"` sur chaque succès. Mapper les `error.id` Navitia (`no_solution`, `date_out_of_bounds`). Enregistrer des fixtures live avant d'écrire le parser. Chaîner les Étapes vers `prochain_passage` / `get_info_trafic` via les ids canoniques (`Cxxxxx`, id numérique de Zone d'arrêt). `disable_geojson=true`. `first_section_mode[]=walking` et `last_section_mode[]=walking`. Pas de `traveler_type`.
+**Greffé de B.** Marquer `horaires: "temps_reel"` sur chaque succès. Mapper les `error.id` Navitia (`no_solution`, `date_out_of_bounds`). Enregistrer des fixtures live avant d'écrire le parser. Chaîner les Étapes vers `prochain_passage` / `get_info_trafic` via les ids canoniques (`Cxxxxx`, id numérique de Zone d'arrêt). `disable_geojson=true`. `first_section_mode[]=walking` et `last_section_mode[]=walking`. Pas de `traveler_type`.
 
 **Rejeté de B pour v1.** Second outil MCP, `geo:lat,lon` (Navitia parle `lon;lat`), `eviter_modes`, `accessible`, POI/commune, bbox Île-de-France, déplacement de `cachedSearch` / `normalizeStopQuery`.
 
@@ -30,7 +43,8 @@ Deux formes ont été dessinées.
 - Horaires théoriques présentés comme Prochain Passage (ADR 0002).
 - Grain Zone de correspondance (ADR 0003) : un Itinéraire part d'un **Lieu** Navitia, pas d'un `MonitoringRef` SIRI.
 - Tarifs, polylines, listes d'arrêts intermédiaires, vélo/voiture/BSS, fauteuil, via.
-- Polling. Cache des Itinéraires. Seconde variable d'environnement. Second client HTTP.
+- Polling. Cache des Itinéraires. Seconde clé API. Second client HTTP.
+- Timeout 10 s figé (remplacé par 50 s configurable — ça **modifie** `primRequest` pour les quatre outils existants).
 
 La spec v1 dit aujourd'hui : « Journey planning, isochrones, and any Navitia feature other than `traffic_reports`, `/pt_objects`, and `/places` » (`.scratch/mcp-idfm-v1/spec.md`). Ajouter l'itinéraire **rouvre ce hors-périmètre**. Ce n'est pas un patch silencieux de v1.
 
@@ -60,7 +74,7 @@ flowchart TD
 
 - Variable `PRIM_API_KEY`. `boot()` refuse de démarrer si elle est absente ou blanche (`src/application/index.ts`). La clé n'entre pas dans `Config`.
 - Composition : `src/index.ts` relit `process.env.PRIM_API_KEY` et la passe aux trois adapters PRIM (`createPrimNavitiaLookup`, `createPrimTrafficReports`, `createPrimSiriStopMonitoring`).
-- Chaque requête PRIM passe par `primRequest` (`src/infra/prim-fetch.ts`) : header Fetch-légal `apiKey` (pas `API Key`, illégal dans Fetch), `AbortSignal.timeout(10_000)`, GET par défaut, pas de retry. Un non-2xx est **rendu** à l'adapter ; seul un `fetch` rejeté (timeout, réseau) est relancé.
+- Chaque requête PRIM passe par `primRequest` (`src/infra/prim-fetch.ts`) : header Fetch-légal `apiKey` (pas `API Key`, illégal dans Fetch), `AbortSignal.timeout` (aujourd'hui 10 s **figé** ; l'implémentation le passe à 50 s via `PRIM_FETCH_TIMEOUT_MS`), GET par défaut, pas de retry. Un non-2xx est **rendu** à l'adapter ; seul un `fetch` rejeté (timeout, réseau) est relancé.
 - Pino masque `PRIM_API_KEY`, `apiKey`, `*.apiKey`, `*.PRIM_API_KEY`. Le chemin logué est `pathname + search` : ne jamais mettre la clé dans la query.
 - La Zone de correspondance n'utilise **pas** `primRequest` : host public `data.iledefrance-mobilites.fr`, sans clé.
 
@@ -108,7 +122,7 @@ L'union 2–5 est juste pour Info Trafic et Prochain Passage. Pour un Itinérair
 | `CorrespondanceLookup` | Pas d'`navitia_id` ; grain SIRI |
 | Union 2–5 de `decideMatches` | Interdite sur ce use-case |
 | `LookupUnavailableError` message | OK pour le géocodage ; pas pour le calcul |
-| Timeout 10 s | Réutiliser ; risque sur `/journeys` (question ouverte) |
+| Timeout 10 s figé | **Remplacer** : défaut 50 s, env `PRIM_FETCH_TIMEOUT_MS`, tous les `primRequest` |
 
 ---
 
@@ -162,7 +176,7 @@ Paramètres **utiles pour v1** (le reste reste dans l'adapter, pas sur le MCP) :
 | `datetime` | `YYYYMMDDTHHMMSS` mur Europe/Paris | Instant demandé. Défaut Navitia : maintenant. |
 | `datetime_represents` | `departure` \| `arrival` | Après / avant cet instant. Défaut : `departure`. |
 | `count` | `3` | Nombre fixe d'itinéraires distincts. |
-| `data_freshness` | `base_schedule` | Théorique. Les disruptions dans la réponse sont **informatives**. `realtime` n'est pas v1 (ADR 0002 : Navitia general v2 = théorique). |
+| `data_freshness` | `realtime` | Les disruptions **recalculent** le chemin (Navitia : realtime inclut l'offre adaptée). Julien accepte aussi `adapted_schedule` si PRIM refuse `realtime`. Ce n'est pas SIRI. |
 | `first_section_mode[]` / `last_section_mode[]` | `walking` | Ne pas s'appuyer sur `traveler_type` (il peut injecter voiture/vélo). |
 | `disable_geojson` | `true` | Même geste que `traffic_reports` : payload plus petit. |
 | `depth` | `1` | À vérifier sur fixture live (question ouverte : `stop_area` des sections). |
@@ -189,7 +203,7 @@ Chaque section, `type` :
 
 Datetimes Navitia : `YYYYMMDDTHHMMSS` = heure murale du coverage. Convertir via Europe/Paris vers ISO 8601 (`formatIsoParis`), comme `navitiaDateToIso` dans `prim-traffic-reports.ts` (helper privé : **dupliquer** dans le nouvel adapter, ne pas l'exporter du trafic).
 
-Disruptions : présentes pour information si `base_schedule`. En v1 on **n'attache pas** les messages aux Étapes. L'agent enchaîne `get_info_trafic` avec le `Cxxxxx` de l'Étape. On pose seulement `horaires: "théoriques"` pour que personne ne confonde avec SIRI.
+Disruptions : avec `realtime`, Navitia évite ou retarde les courses touchées quand le flux le permet. `journey.status` peut être `NO_SERVICE`, `SIGNIFICANT_DELAYS`, `MODIFIED_SERVICE`. On **n'attache pas** le texte Info Trafic aux Étapes. L'agent enchaîne `get_info_trafic` avec le `Cxxxxx`. On pose `horaires: "temps_reel"` et la description d'outil dit que ce n'est pas un Prochain Passage SIRI.
 
 Erreurs Navitia documentées en HTTP 404 + `error.id` (à pinner par fixture PRIM, le statut exact n'est pas dans ce dépôt) :
 
@@ -208,7 +222,7 @@ Un 403 est le signal « clé non abonnée à ce produit » — voir §4.
 
 ### Nom
 
-`itineraire`. Même registre que `prochain_passage` (nom métier, pas `get_*`).
+Identifiant MCP : `itineraire` (ASCII). Titre et copies : **Itinéraire**. Même registre que `prochain_passage` (nom métier, pas `get_*`).
 
 Description française, annotations `readOnlyHint` / `openWorldHint` comme les quatre outils. Une phrase ajoutée à `MCP_INSTRUCTIONS` : les questions d'itinéraire appellent `itineraire` directement ; `get_stop_id` n'est pas un prérequis ; une clarification est un succès, l'agent montre tous les candidats **des deux** côtés puis rappelle **une** fois.
 
@@ -291,7 +305,7 @@ type Itineraire = {
 type ItineraireResult =
   | {
       status: "ok";
-      horaires: "théoriques";
+      horaires: "temps_reel";
       itineraires: Itineraire[];
       summary?: "Aucun itinéraire";
       source: "Île-de-France Mobilités";
@@ -343,6 +357,10 @@ export function createApplication(deps: {
   maxPassages?: number;
 }): Application;
 
+// boot Config s'élargit :
+// primFetchTimeoutMs: number  // défaut 50_000, env PRIM_FETCH_TIMEOUT_MS
+// passé aux adapters PRIM / primRequest, pas au use-case application
+
 // sur l'objet retourné
 itineraire(
   depart: string,
@@ -355,7 +373,7 @@ Nouvel adapter `createPrimItineraire({ apiKey, fetch?, log? })` dans `src/infra/
 
 ### Termes de glossaire à ajouter à l'implémentation (pas dans ce diff)
 
-- **Itinéraire** : trajet calculé d'un Lieu à un autre, horaires théoriques, suite d'Étapes. _Avoid_: journey, isochrone, Prochain Passage.
+- **Itinéraire** : trajet calculé d'un Lieu à un autre, chemin Navitia temps réel, suite d'Étapes. _Avoid_: journey, isochrone, Prochain Passage.
 - **Lieu** : départ ou arrivée : Zone d'arrêt, adresse, ou `longitude;latitude`. _Avoid_: place, stop_point, POI comme mot pour tout.
 - **Étape** : une marche, une attente, ou un trajet sur une Ligne. _Avoid_: section, leg.
 - **Changement** : nombre de correspondances d'un Itinéraire. _Avoid_: Zone de correspondance.
@@ -366,7 +384,7 @@ Nouvel adapter `createPrimItineraire({ apiKey, fetch?, log? })` dans `src/infra/
 itineraire { depart: "Nation", arrivee: "10 Rue de Rivoli, Paris" }
   → needs_clarification (plusieurs Nation) ; plan non appelé
 itineraire { depart: "71264", arrivee: "2.3588;48.8556" }
-  → ok, jusqu'à 3 Itinéraires théoriques
+  → ok, jusqu'à 3 Itinéraires (`horaires: "temps_reel"`)
 itineraire { depart: "2.2945;48.8584", arrivee: "Gare de Lyon",
              horaire: "2026-10-29T18:30:00+01:00", sens: "arrivee" }
   → ok ou clarification sur Gare de Lyon ; le départ coordonnée n'appelle pas /places
@@ -386,39 +404,36 @@ Les appels Navitia déjà en production (`/places`, `/pt_objects`, `/lines`, `/t
 
 SIRI requête unitaire est un **autre** produit (`/marketplace/stop-monitoring`). Ça n'informe pas sur `/journeys`.
 
-Quotas du produit Accès générique v2 (fiche PRIM) : 5 req/s et **1 000/jour** par défaut ; 10 req/s et 20 000/jour en quotas augmentés. La spec v1 compte déjà ~720 req/jour pour le cron `traffic_reports`. Lookup + SIRI + `/journeys` se partagent le reste **s'ils sont bien sur le même compteur** — hypothèse de la spec, pas une mesure.
+Quotas : Julien a déjà augmenté le palier. Le cron Info Trafic (~720/jour) n'est plus le facteur limitant annoncé en v1. Toujours pas de polling `/journeys`.
 
 ### Ce que cette VM n'a pas pu prouver
 
-- `PRIM_API_KEY` est **unset**. Pas de fichier `.env`. Aucun appel live n'a été tenté.
-- Le dépôt ne contient aucune fixture `/journeys`, aucun 403, aucun test d'abonnement.
-- PRIM exige un abonnement **par item catalogue**. Si le compte a bien l'accès générique v2 (ce que lookup + traffic_reports impliquent en prod), `/journeys` devrait répondre 200. Un 403 dirait le contraire.
+Julien a ajouté `PRIM_API_KEY` aux secrets de l'environnement Cloud. Dans **cet** agent, la variable est toujours unset (pas de `.env`). Un secret d'environnement Cloud s'injecte au boot : [env-setup](https://cursor.com) — *Configuration changes affect newly started agents, never an already-running agent.*
 
-### Comment Julien vérifie (sans coller la clé)
-
-Dans le dashboard PRIM, item « Calculateur … Accès générique (v2) » : abonné.
-
-Puis un GET (header seulement, ne pas logger la valeur) :
+Aucun GET live n'a donc été tenté ici. Pas de fixture `/journeys` dans le dépôt. Le prochain run d'implémentation, avec la clé injectée, exécute le GET ci-dessous (header seulement, ne jamais logger la valeur) et commite un JSON sanitisé.
 
 ```text
-GET https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/journeys?from=2.3749036;48.8467927&to=2.2922926;48.8583736&count=1&disable_geojson=true
+GET https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/journeys?from=2.3749036;48.8467927&to=2.2922926;48.8583736&count=1&disable_geojson=true&data_freshness=realtime
 ```
 
 | Statut | Lecture |
 | --- | --- |
-| 200 + `journeys` | Accès OK. Enregistrer le JSON **sanitisé** comme fixture. |
+| 200 + `journeys` | Accès OK + realtime OK. Fixture. |
+| 400 / erreur de paramètre sur `realtime` | Réessayer `adapted_schedule` (accepté par Julien). |
 | 200 + `error.id=no_solution` | Accès OK, pas d'itinéraire pour ce couple. |
-| 401 / 403 | Clé refusée ou non abonnée à cet item. Bloquant. |
-| 429 | Quota. Accès probable, palier trop juste. |
-| timeout > 10 s | `primRequest` actuel casserait le calcul. |
+| 401 / 403 | Clé refusée ou non abonnée. Bloquant pour l'adapter. |
+| 429 | Quota. Improbable si le palier est déjà augmenté. |
+| timeout | Avec 50 s ça ne devrait plus être le 10 s d'avant. |
 
-Tant que ce palier n'est pas vert, **ne pas implémenter l'adapter**. Les types et les tests application sur fake peuvent avancer.
+Tant que le GET n'a pas rendu 200, **ne pas implémenter l'adapter live**. Spec, types et tests application sur fake peuvent avancer.
 
 ---
 
 ## 5. Blast radius
 
-**Le fait de sûreté.** Ajouter un port optionnel `itineraires?` dont le défaut throw seulement si `app.itineraire()` est appelé, plus un `registerTool` **additif**, ne change pas les quatre outils existants **à condition de ne pas modifier** `searchStops`, `decideMatches`, `primRequest`, les adapters SIRI/trafic/zones, ni les schémas des quatre `registerTool`.
+**Le fait de sûreté (outils métier).** Ajouter un port optionnel `itineraires?` dont le défaut throw seulement si `app.itineraire()` est appelé, plus un `registerTool` **additif**, ne change pas les quatre outils existants **à condition de ne pas modifier** `searchStops`, `decideMatches`, les adapters SIRI/trafic/zones, ni les schémas des quatre `registerTool`.
+
+**Exception demandée par Julien.** `primRequest` **change** : timeout 10 s → 50 s configurable. Ça touche lookup, Info Trafic, SIRI et le futur `/journeys`. Les tests `prim-fetch.test.ts` et `boot` bougent. Le comportement métier des quatre outils (enveloppes, match policy) ne change pas ; seule la durée d'abort change.
 
 Preuve au graphe d'appels (niveau 3 — le code a été lu ; les tests n'ont pas été relancés ici : pas de `node_modules` sur cette VM) :
 
@@ -431,18 +446,18 @@ Preuve au graphe d'appels (niveau 3 — le code a été lu ; les tests n'ont pas
 
 | Risque | Où | Probabilité / coût | Comment vérifier |
 | --- | --- | --- | --- |
-| Quota 1000/jour saturé (cron ~720 + lookup + SIRI + journeys) | spec v1, fiche PRIM | réelle / Info Trafic et lookup 404 pendant 24 h | Compteur PRIM après un soir d'usage ; ne pas cacher les Itinéraires, cacher les lieux |
-| `/journeys` > 10 s | `PRIM_FETCH_TIMEOUT_MS` | inconnue / `status: "error"` | Appel live palier 0 ; si abort systématique, **alors** param optionnel de timeout sur `primRequest` (défaut 10 s) — pas un second client |
+| Timeout 50 s sur SIRI et `traffic_reports` | `prim-fetch.ts`, tous les adapters PRIM | certaine (c'est le but) / une requête pendante occupe 50 s au lieu de 10 | Tests timeout + boot ; le cron 2 min n'est pas bloqué (`protect` sur Croner) |
+| `realtime` absent ou 400 sur PRIM | query `data_freshness` | inconnue / calcul en erreur | Palier 0 avec `realtime` puis `adapted_schedule` |
 | 2–5 « Nation » : comportement différent de `prochain_passage` | `itineraire` vs `decideMatches` | certaine / l'agent doit clarifier | Description d'outil + tests « few → clarification, plan count = 0 » |
-| Confusion théorique / temps réel | ADR 0002 | moyenne / mensonge à l'usager | Champ `horaires: "théoriques"` + phrase d'instructions |
+| Confusion Itinéraire Navitia / Prochain Passage SIRI | ADR 0002, ADR 0004 | moyenne / horaires mal attribués | Champ `horaires: "temps_reel"` + phrase d'instructions « pas un Prochain Passage » |
 | Cache 24 h d'un `/places` vide | `cachedSearch` actuel cache aussi `[]` | déjà vrai pour les arrêts / `not_found` collant | Ne pas inventer une politique différente ; documenter |
 | `MCP_INSTRUCTIONS` plus longues → l'agent délaisse `prochain_passage` | `src/http.ts` | faible / horaires live manqués | Une phrase, pas un paragraphe ; smoke `toContain("prochain_passage")` |
 
 **Cleared**
 
-- Origin, `/health`, boot `PRIM_API_KEY`, cron Info Trafic, SIRI, référentiel zones : aucun de ces fichiers n'a besoin d'être édité pour A.
-- `prim-navitia-lookup.ts` reste byte-identical.
-- Pas de nouvelle env var.
+- Origin, `/health`, cron Info Trafic, référentiel zones : inchangés en comportement.
+- `prim-navitia-lookup.ts` `searchStops` reste `type[]=stop_area` only (byte-identical sur le filtre).
+- Nouvelle env var **`PRIM_FETCH_TIMEOUT_MS`** (demandée). `boot` et `Config` s'élargissent. `.env.example` aussi.
 - Couverture vitest : `src/application/**` à 80 %. Le use-case doit vivre dans `application/` avec `application.itineraire.test.ts`, sinon le seuil casse.
 
 **Avant merge de l'implémentation (pas de ce plan)**
@@ -455,13 +470,13 @@ Le test le moins cher qui attrape la vraie régression : `application.identity.t
 
 Seam produit : `createApplication`, fake `ItinerairePlanning`. C'est le contrat. Les tests n'assertent pas le JSON Navitia (spec v1 Testing Decisions).
 
-Seam adapter : `createPrimItineraire` avec `fetch` injecté, fixtures JSON **commitées**. Assertent URLs (`/places` a les deux `type[]`, `/journeys` n'a que `from,to,datetime,datetime_represents,count,data_freshness,first_section_mode[],last_section_mode[],disable_geojson`) et le mapping vers `Lieu` / `CalculItineraire`.
+Seam adapter : `createPrimItineraire` avec `fetch` injecté, fixtures JSON **commitées**. Assertent URLs (`/places` a les deux `type[]`, `/journeys` a `from,to,datetime,datetime_represents,count,data_freshness=realtime,first_section_mode[],last_section_mode[],disable_geojson`) et le mapping vers `Lieu` / `CalculItineraire`.
 
-Seam HTTP : smoke additif (`tools/list` contient `itineraire`, instructions mentionnent « théoriques »). Pas de test produit via Streamable HTTP.
+Seam HTTP : smoke additif (`tools/list` contient `itineraire`, instructions mentionnent « temps réel » / « Itinéraire »). Pas de test produit via Streamable HTTP.
 
 ### Cas application (fake, clock injecté)
 
-1. Deux lieux uniques → un `plan`, `count: 3`, `sens: "depart"`, `horaire` = clock, ISO Paris, `horaires: "théoriques"`, `source`.
+1. Deux lieux uniques → un `plan`, `count: 3`, `sens: "depart"`, `horaire` = clock, ISO Paris, `horaires: "temps_reel"`, `source`.
 2. `horaire` avec offset + `sens: "arrivee"` transmis tels quels à `plan`.
 3. `lon;lat` n'appelle pas `searchLieux`.
 4. `;` mal formé, `horaire` sans offset, `sens` hors enum, côté blanc : pas d'I/O, `not_found`.
@@ -495,9 +510,9 @@ Possible seulement si palier 0 vert. Un test **opt-in**, skip si `PRIM_API_KEY` 
 itineraire("2.3749036;48.8467927", "2.2922926;48.8583736")
 ```
 
-Assert : `status === "ok"`, `horaires === "théoriques"`, `itineraires.length >= 1`, `duree_secondes > 0`. Pas d'assert sur un horaire précis (l'offre bouge). Ne pas logger la clé. Ne pas l'activer en CI par défaut (quota).
+Assert : `status === "ok"`, `horaires === "temps_reel"`, `itineraires.length >= 1`, `duree_secondes > 0`. Pas d'assert sur un horaire précis (l'offre bouge). Ne pas logger la clé. Ne pas l'activer en CI par défaut.
 
-Cette VM n'a pas pu lancer cet appel.
+Cette VM n'a pas pu lancer cet appel (`PRIM_API_KEY` unset ici).
 
 TDD : un cas rouge → assez de code pour le vert → suivant. Pas tous les cas d'abord (skill tdd, anti-pattern horizontal slicing).
 
@@ -505,20 +520,18 @@ TDD : un cas rouge → assez de code pour le vert → suivant. Pas tous les cas 
 
 ## 7. Étapes d'implémentation
 
-Petites unités, chacune vérifiable. S'arrêter au palier 0 si Julien n'a pas confirmé l'accès.
+Petites unités, chacune vérifiable.
 
-**Paliers 1–8 produisent du code ; ce document ne les exécute pas.**
+**Palier 1 (spec, ADR, glossaire) est fait dans ce diff.** Palier 0 live reste à faire au prochain boot avec la clé. Paliers 2–8 = code, pas encore.
 
-### Palier 0 — Accès clé (humain)
+### Palier 0 — Accès clé (prochain agent, clé injectée)
 
-Julien exécute le GET §4. Critère : statut 200 (éventuellement `no_solution`), pas 401/403.
+GET §4 avec `data_freshness=realtime`. Critère : statut 200 (éventuellement `no_solution`), pas 401/403. Si 400 sur `realtime` : retenter `adapted_schedule`.
 
-En parallèle, un agent peut écrire spec + types + tests application sur fake (paliers 1–3). Pas l'adapter live.
+### Palier 1 — Spec et ADR — **fait**
 
-### Palier 1 — Spec et ADR
-
-- `.scratch/itineraire/spec.md` (nouveau slug ; ne pas réécrire en silence le hors-périmètre v1).
-- `docs/adr/0004-itineraire.md` : même produit PRIM que `/places` ; grain Lieu pas Zone de correspondance ; union 2–5 interdite ; `base_schedule` ; un outil.
+- `.scratch/itineraire/spec.md` (`Status: ready-for-agent`).
+- `docs/adr/0004-itineraire.md` : realtime, un outil, timeout 50 s configurable, pas d'union 2–5.
 - Entrées glossaire.
 
 Critère : ADR + spec lus sans ouvrir le code.
@@ -549,11 +562,11 @@ Critère : les cas du palier 3 verts. `identity` / `passages` / `traffic` toujou
 
 Cas 2–4, 7–8, 11–14. Critère : fichier de test vert en entier.
 
-### Palier 6 — Adapter
+### Palier 6 — Timeout global puis adapter
 
-`src/infra/prim-itineraire.ts` + tests sur fixtures. `primRequest` inchangé. `prim-navitia-lookup.ts` inchangé.
+D'abord (préfacteur, tests existants verts) : `primFetchInit` / `primRequest` prennent `timeoutMs` ; `boot` lit `PRIM_FETCH_TIMEOUT_MS` (défaut 50000) ; tests `prim-fetch.test.ts` et `application.test.ts` passent à 50 s / env override. Puis `src/infra/prim-itineraire.ts` + tests sur fixtures. `prim-navitia-lookup.ts` filtre `stop_area` inchangé.
 
-Critère : tests adapter verts ; grep `searchStops` / `type[]=stop_area` dans le lookup = inchangé.
+Critère : tests timeout verts ; tests adapter verts ; grep `type[]=stop_area` dans le lookup = inchangé.
 
 ### Palier 7 — Câblage MCP
 
@@ -567,22 +580,17 @@ Test skip si pas de clé. Une fois sur la machine de Julien après palier 0.
 
 Critère : skip en CI ; vert en local avec la clé.
 
-Ordre TDD : 3 → 4 → 5 → 6 → 7. Ne pas commencer par éditer `searchStops` ou `primRequest`.
+Ordre TDD : timeout (6a) peut partir tout de suite (pas de clé). 3 → 4 → 5 → adapter (6b) → 7. Ne pas commencer par éditer `searchStops`.
 
 ---
 
-## 8. Questions ouvertes pour Julien
+## 8. Questions encore ouvertes
 
-Les réponses débloquent ou infléchissent. Les recommandations du plan sont en italique.
+Tranché par Julien : fraîcheur (`realtime`), quota (déjà augmenté), timeout (50 s global configurable), nom (`itineraire` / **Itinéraire**), spec (slug `itineraire`).
 
-1. **Accès.** La clé de prod est-elle abonnée à « Accès générique v2 », et le GET `/journeys` du §4 rend-il 200 ou 403 ? *Sans 200, pas d'adapter.*
-2. **Ambiguïté 2–5.** Clarifier (recommandé) ou prendre le premier résultat Navitia ? *Clarifier. L'union est un piège quota.*
-3. **Fraîcheur.** Rester sur `base_schedule` + `horaires: "théoriques"` (recommandé, ADR 0002) ou tenter `data_freshness=realtime` dès v1 ?
-4. **Types de lieux.** `stop_area` + `address` + `lon;lat` (recommandé) ou aussi POI / commune ? *POI/commune = v2, et B les réduisait de toute façon à une coordonnée.*
-5. **Quota.** On livre sur le palier 1000/jour (reste ~280 après le cron) ou on demande d'abord les quotas augmentés (20 000) ?
-6. **Timeout.** On reste à 10 s partagés (recommandé tant que le live n'abort pas) ou on autorise un timeout plus long **uniquement** pour `/journeys` ?
-7. **Nom d'outil.** `itineraire` (recommandé) ou `estimer_itineraire` ?
-8. **Info Trafic sur les Étapes.** En v1, l'agent rappelle `get_info_trafic` (recommandé) ou on annote chaque Ligne avec la sévérité du snapshot mémoire (zéro requête PRIM de plus) ?
-9. **Spec.** Nouveau slug `.scratch/itineraire/` (recommandé) ou rouvrir `mcp-idfm-v1` en amendant le hors-périmètre ?
+1. **Accès live.** Au prochain agent avec `PRIM_API_KEY` injectée : le GET §4 rend-il 200, 403, ou 400 sur `realtime` ?
+2. **Ambiguïté 2–5.** Toujours : clarifier, pas d'union. *Dire le contraire si tu veux le premier résultat Navitia.*
+3. **Types de lieux.** Toujours : stop + adresse + `lon;lat`. *POI/commune = plus tard.*
+4. **Info Trafic sur les Étapes.** Toujours : l'agent rappelle `get_info_trafic`. *Dire le contraire pour annoter depuis le snapshot.*
 
-Ce plan n'implémente rien. Branche + PR draft = ce fichier seul.
+Pas de code de production dans ce diff (spec, ADR, glossaire, plan).
