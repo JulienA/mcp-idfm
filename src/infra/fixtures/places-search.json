@@ -1,0 +1,80 @@
+{
+  "places": [
+    {
+      "embedded_type": "stop_area",
+      "stop_area": {
+        "id": "stop_area:IDFM:71673",
+        "name": "Nation",
+        "coord": {
+          "lat": "48.84883771695595",
+          "lon": "2.3963326474955293"
+        },
+        "physical_modes": [
+          {
+            "id": "physical_mode:Bus",
+            "name": "Bus"
+          },
+          {
+            "id": "physical_mode:Metro",
+            "name": "Métro"
+          },
+          {
+            "id": "physical_mode:RapidTransit",
+            "name": "RER"
+          }
+        ],
+        "commercial_modes": [
+          {
+            "id": "commercial_mode:Bus",
+            "name": "Bus"
+          },
+          {
+            "id": "commercial_mode:Metro",
+            "name": "Métro"
+          },
+          {
+            "id": "commercial_mode:RapidTransit",
+            "name": "RER"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "stop_area",
+      "stop_area": {
+        "id": "stop_area:IDFM:461864",
+        "name": "One Nation Paris",
+        "coord": {
+          "lat": "48.829118284532605",
+          "lon": "1.979606414014234"
+        },
+        "physical_modes": [
+          {
+            "id": "physical_mode:Bus",
+            "name": "Bus"
+          }
+        ],
+        "commercial_modes": [
+          {
+            "id": "commercial_mode:Bus",
+            "name": "Bus"
+          }
+        ]
+      }
+    },
+    {
+      "embedded_type": "address",
+      "name": "10 Rue de Rivoli (Paris)",
+      "address": {
+        "id": "2.36041;48.8555",
+        "name": "10 Rue de Rivoli",
+        "house_number": 10,
+        "label": "10 Rue de Rivoli (Paris)",
+        "coord": {
+          "lat": "48.8555",
+          "lon": "2.36041"
+        }
+      }
+    }
+  ]
+}

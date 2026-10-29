@@ -186,6 +186,44 @@ describe("boot", () => {
       expect(result.message).toBe("MAX_PASSAGES must be a positive integer");
     }
   });
+
+  it("defaults PRIM_FETCH_TIMEOUT_MS to 50000", () => {
+    const result = boot({ PRIM_API_KEY: "test-key" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+    expect(result.config.primFetchTimeoutMs).toBe(50_000);
+  });
+
+  it("uses PRIM_FETCH_TIMEOUT_MS from the environment", () => {
+    const result = boot({
+      PRIM_API_KEY: "test-key",
+      PRIM_FETCH_TIMEOUT_MS: "12000",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+    expect(result.config.primFetchTimeoutMs).toBe(12_000);
+  });
+
+  it("exits non-zero when PRIM_FETCH_TIMEOUT_MS is not a positive integer", () => {
+    for (const value of ["0", "-1", "1.5", "abc", " ", "9007199254740993"]) {
+      const result = boot({
+        PRIM_API_KEY: "test-key",
+        PRIM_FETCH_TIMEOUT_MS: value,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) {
+        throw new Error(`expected boot to fail for ${value}`);
+      }
+      expect(result.exitCode).not.toBe(0);
+      expect(result.message).toBe(
+        "PRIM_FETCH_TIMEOUT_MS must be a positive integer",
+      );
+    }
+  });
 });
 
 describe("health", () => {

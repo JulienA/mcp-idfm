@@ -7,7 +7,7 @@ import {
 } from "../domain/index.js";
 import type { Logger } from "./logger.js";
 import { silentLogger } from "./logger.js";
-import { primRequest } from "./prim-fetch.js";
+import { PRIM_FETCH_TIMEOUT_MS, primRequest } from "./prim-fetch.js";
 
 const PRIM_TRAFFIC_REPORTS_URL =
   "https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia/traffic_reports";
@@ -18,6 +18,7 @@ type PrimTrafficReportsOptions = {
   apiKey: string;
   fetch?: typeof fetch;
   log?: Logger;
+  timeoutMs?: number;
 };
 
 type NavitiaLink = {
@@ -291,6 +292,7 @@ export function createPrimTrafficReports(
 ): { fetch(): Promise<InfoTraficMessage[]> } {
   const fetchFn = options.fetch ?? fetch;
   const log = options.log ?? silentLogger;
+  const timeoutMs = options.timeoutMs ?? PRIM_FETCH_TIMEOUT_MS;
 
   async function fetchPage(
     startPage: number,
@@ -302,7 +304,13 @@ export function createPrimTrafficReports(
     if (startPage > 0) {
       url.searchParams.set("start_page", String(startPage));
     }
-    const response = await primRequest(url, options.apiKey, fetchFn, log);
+    const response = await primRequest(
+      url,
+      options.apiKey,
+      fetchFn,
+      log,
+      timeoutMs,
+    );
     if (!response.ok) {
       throw new Error(`PRIM traffic_reports failed: ${response.status}`);
     }

@@ -1,4 +1,8 @@
-export { canonicalLineId, canonicalStopId } from "./ids.js";
+export {
+  canonicalLineId,
+  canonicalStopId,
+  normalizeStopQuery,
+} from "./ids.js";
 export { formatIsoParis } from "./iso-paris.js";
 
 export type Ligne = {
@@ -156,3 +160,89 @@ export type ProchainPassageResult =
       message: string;
       source: typeof SOURCE;
     };
+
+export type LieuGenre = "zone_d_arret" | "adresse" | "coordonnees";
+
+export type Lieu = {
+  id: string;
+  label: string;
+  genre: LieuGenre;
+  mode?: string;
+};
+
+export type EffetItineraire =
+  | "aucun_service"
+  | "service_modifie"
+  | "retards";
+
+export type PerturbationItineraire = {
+  title: string;
+  text: string;
+  severite: Severite;
+};
+
+export type EtapeItineraire =
+  | {
+      genre: "marche";
+      duree_secondes: number;
+      de: string;
+      vers: string;
+    }
+  | {
+      genre: "attente";
+      duree_secondes: number;
+      lieu: string;
+    }
+  | {
+      genre: "ligne";
+      ligne: { id: string; label: string; mode: string };
+      destination: string;
+      de: string;
+      vers: string;
+      de_id?: string;
+      vers_id?: string;
+      depart: string;
+      arrivee: string;
+      perturbations?: PerturbationItineraire[];
+    };
+
+export type Itineraire = {
+  depart: string;
+  arrivee: string;
+  duree_secondes: number;
+  changements: number;
+  effet?: EffetItineraire;
+  etapes: EtapeItineraire[];
+};
+
+export type ItineraireResult =
+  | {
+      status: "ok";
+      horaires: "temps_reel";
+      itineraires: Itineraire[];
+      summary?: "Aucun itinéraire";
+      source: typeof SOURCE;
+    }
+  | {
+      status: "not_found";
+      message: string;
+      source: typeof SOURCE;
+    }
+  | {
+      status: "needs_clarification";
+      depart: { lieu: Lieu } | { candidats: Lieu[] };
+      arrivee: { lieu: Lieu } | { candidats: Lieu[] };
+      source: typeof SOURCE;
+    }
+  | {
+      status: "error";
+      message: "Impossible de calculer l'Itinéraire";
+      source: typeof SOURCE;
+    };
+
+export type CalculItineraire =
+  | { kind: "ok"; itineraires: Itineraire[] }
+  | { kind: "aucun" }
+  | { kind: "hors_calendrier" }
+  | { kind: "lieu_inconnu" }
+  | { kind: "indisponible" };

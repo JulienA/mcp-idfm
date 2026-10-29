@@ -1,12 +1,15 @@
 import type { Logger } from "./logger.js";
 import { silentLogger } from "./logger.js";
 
-export const PRIM_FETCH_TIMEOUT_MS = 10_000;
+export const PRIM_FETCH_TIMEOUT_MS = 50_000;
 
-export function primFetchInit(apiKey: string): RequestInit {
+export function primFetchInit(
+  apiKey: string,
+  timeoutMs: number = PRIM_FETCH_TIMEOUT_MS,
+): RequestInit {
   return {
     headers: { apiKey: apiKey },
-    signal: AbortSignal.timeout(PRIM_FETCH_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   };
 }
 
@@ -15,11 +18,12 @@ export async function primRequest(
   apiKey: string,
   fetchFn: typeof fetch,
   log: Logger = silentLogger,
+  timeoutMs: number = PRIM_FETCH_TIMEOUT_MS,
 ): Promise<Response> {
   const started = Date.now();
   const path = `${url.pathname}${url.search}`;
   try {
-    const response = await fetchFn(url, primFetchInit(apiKey));
+    const response = await fetchFn(url, primFetchInit(apiKey, timeoutMs));
     const ms = Date.now() - started;
     const fields = { path, status: response.status, ms };
     if (response.ok) {
