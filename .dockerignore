@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+.git
+.scratch
+.agents
+.env
+.env.*
+!.env.example
+*.md
+AGENTS.md
+vitest.config.ts
+src/**/*.test.ts

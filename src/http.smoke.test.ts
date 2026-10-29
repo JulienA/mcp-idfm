@@ -1,0 +1,232 @@
+import type { AddressInfo } from "node:net";
+import { afterEach, describe, expect, it } from "vitest";
+import { boot, createApplication } from "./application/index.js";
+import { startHttpServer } from "./http.js";
+
+function emptyIdentity() {
+  return createApplication({
+    lookup: {
+      searchLines: async () => [],
+      searchStops: async () => [],
+    },
+  });
+}
+
+describe("http adapter", () => {
+  let close: (() => Promise<void>) | undefined;
+
+  afterEach(async () => {
+    await close?.();
+    close = undefined;
+  });
+
+  it("accepts POST /mcp", async () => {
+    const result = boot({
+      PRIM_API_KEY: "test-key",
+      HOST: "127.0.0.1",
+      PORT: "0",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+
+    const server = await startHttpServer(result.config, emptyIdentity());
+    close = () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+
+    const address = server.address() as AddressInfo;
+    expect(address.address).toBe("0.0.0.0");
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2026-07-28",
+          capabilities: {},
+          clientInfo: { name: "smoke", version: "0.0.0" },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("jsonrpc");
+    expect(body).toContain("instructions");
+    expect(body).toContain("prochain_passage");
+    expect(body).toContain("Châtelet");
+    expect(body).toContain("RER A");
+    expect(body).toContain("needs_clarification");
+  });
+
+  it("lists identity, Info Trafic and Prochain Passage tools with French descriptions", async () => {
+    const result = boot({
+      PRIM_API_KEY: "test-key",
+      HOST: "127.0.0.1",
+      PORT: "0",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+
+    const server = await startHttpServer(result.config, emptyIdentity());
+    close = () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+
+    const address = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("get_line_id");
+    expect(body).toContain("get_stop_id");
+    expect(body).toContain("get_info_trafic");
+    expect(body).toContain("prochain_passage");
+    expect(body).toContain("Ligne");
+    expect(body).toContain("Zone d'arrêt");
+    expect(body).toContain("Zone de correspondance");
+    expect(body).toContain("Info Trafic");
+    expect(body).toContain("Prochains Passages");
+    expect(body).toContain("Châtelet");
+    expect(body).toContain("RER A");
+    expect(body).toContain("N'appelle pas get_stop_id");
+  });
+
+  it("rejects POST /mcp when Origin does not match HOST", async () => {
+    const result = boot({
+      PRIM_API_KEY: "test-key",
+      HOST: "mcp.example.test",
+      PORT: "0",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+
+    const server = await startHttpServer(result.config, emptyIdentity());
+    close = () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+
+    const address = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+        origin: "http://evil.example",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2026-07-28",
+          capabilities: {},
+          clientInfo: { name: "smoke", version: "0.0.0" },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("returns an MCP error when Ligne lookup fails, not HTTP 500", async () => {
+    const result = boot({
+      PRIM_API_KEY: "test-key",
+      HOST: "127.0.0.1",
+      PORT: "0",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+
+    const app = createApplication({
+      lookup: {
+        searchLines: async () => {
+          throw new Error("PRIM down");
+        },
+        searchStops: async () => [],
+      },
+    });
+    const server = await startHttpServer(result.config, app);
+    close = () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+
+    const address = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: "get_line_id",
+          arguments: { query: "RER B" },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toMatch(/"isError"\s*:\s*true/);
+    expect(body).toContain("Recherche indisponible");
+    expect(body).not.toContain("PRIM down");
+  });
+
+  it("answers GET /health from the application module", async () => {
+    const result = boot({
+      PRIM_API_KEY: "test-key",
+      HOST: "127.0.0.1",
+      PORT: "0",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected boot to succeed");
+    }
+
+    const app = emptyIdentity();
+    const server = await startHttpServer(result.config, app);
+    close = () =>
+      new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+
+    const address = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${address.port}/health`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(app.getHealth());
+  });
+});
