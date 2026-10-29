@@ -6,7 +6,7 @@ import {
 } from "../domain/index.js";
 import type { Logger } from "./logger.js";
 import { silentLogger } from "./logger.js";
-import { primRequest } from "./prim-fetch.js";
+import { PRIM_FETCH_TIMEOUT_MS, primRequest } from "./prim-fetch.js";
 
 const PRIM_NAVITIA_BASE =
   "https://prim.iledefrance-mobilites.fr/marketplace/v2/navitia";
@@ -35,6 +35,7 @@ type PrimNavitiaLookupOptions = {
   apiKey: string;
   fetch?: typeof fetch;
   log?: Logger;
+  timeoutMs?: number;
 };
 
 type NavitiaLine = {
@@ -116,9 +117,16 @@ export function createPrimNavitiaLookup(
 } {
   const fetchFn = options.fetch ?? fetch;
   const log = options.log ?? silentLogger;
+  const timeoutMs = options.timeoutMs ?? PRIM_FETCH_TIMEOUT_MS;
 
   async function requestJson(url: URL): Promise<unknown | undefined> {
-    const response = await primRequest(url, options.apiKey, fetchFn, log);
+    const response = await primRequest(
+      url,
+      options.apiKey,
+      fetchFn,
+      log,
+      timeoutMs,
+    );
     if (response.status === 404) {
       return undefined;
     }

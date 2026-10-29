@@ -1,9 +1,13 @@
 import {
   formatIsoParis,
+  normalizeStopQuery,
   SOURCE,
+  type CalculItineraire,
   type IdentityCandidate,
   type InfoTraficMessage,
   type InfoTraficResult,
+  type ItineraireResult,
+  type Lieu,
   type LineIdentityResult,
   type Ligne,
   type PassageGroup,
@@ -20,12 +24,19 @@ import {
 } from "./referential-cache.js";
 
 export type {
+  CalculItineraire,
+  EffetItineraire,
+  EtapeItineraire,
   IdentityCandidate,
   InfoTraficMessage,
   InfoTraficResult,
+  Itineraire,
+  ItineraireResult,
+  Lieu,
   LineIdentityResult,
   Ligne,
   PassageGroup,
+  PerturbationItineraire,
   ProchainPassage,
   ProchainPassageResult,
   Severite,
@@ -48,6 +59,17 @@ export type CorrespondanceLookup = {
 
 export type StopMonitoring = {
   getPassages(monitoringRef: string): Promise<ProchainPassage[]>;
+};
+
+export type ItinerairePlanning = {
+  searchLieux(query: string, limit: number): Promise<Lieu[]>;
+  plan(input: {
+    depart: Lieu;
+    arrivee: Lieu;
+    horaire: Date;
+    sens: "depart" | "arrivee";
+    count: number;
+  }): Promise<CalculItineraire>;
 };
 
 export type Clock = {
@@ -90,19 +112,6 @@ function normalizeLineQuery(query: string): string {
   const siri = /^STIF:Line::(C\d+):?$/i.exec(trimmed);
   if (siri?.[1]) {
     return siri[1].toUpperCase();
-  }
-  return trimmed;
-}
-
-function normalizeStopQuery(query: string): string {
-  const trimmed = query.trim();
-  const navitia = /^stop_area:IDFM:(.+)$/i.exec(trimmed);
-  if (navitia?.[1]) {
-    return navitia[1];
-  }
-  const siri = /^STIF:StopArea:SP:([^:]+):?$/i.exec(trimmed);
-  if (siri?.[1]) {
-    return siri[1];
   }
   return trimmed;
 }
@@ -152,6 +161,8 @@ type MatchDecision<T> =
 export const DEFAULT_MAX_CANDIDATES = 5;
 export const DEFAULT_MAX_PASSAGES_PER_GROUP = 5;
 export const DEFAULT_MAX_PASSAGES = 30;
+export const DEFAULT_MAX_ITINERAIRES = 3;
+export const DEFAULT_PRIM_FETCH_TIMEOUT_MS = 50_000;
 
 function decideMatches<T>(
   matches: T[],
@@ -175,6 +186,7 @@ export function createApplication(deps: {
   clock?: Clock;
   snapshot?: InfoTraficSnapshot;
   stopMonitoring?: StopMonitoring;
+  itineraires?: ItinerairePlanning;
   maxCandidates?: number;
   maxPassagesPerGroup?: number;
   maxPassages?: number;
@@ -200,10 +212,19 @@ export function createApplication(deps: {
       throw new Error("Zone de correspondance lookup is required");
     },
   };
+  const itineraires = deps.itineraires ?? {
+    async searchLieux(): Promise<Lieu[]> {
+      throw new Error("Itinéraire adapter is required");
+    },
+    async plan(): Promise<CalculItineraire> {
+      throw new Error("Itinéraire adapter is required");
+    },
+  };
   const lineCache = createReferentialCache<Ligne[]>(epochMs);
   const stopCache = createReferentialCache<ZoneDarret[]>(epochMs);
   const correspondanceCache =
     createReferentialCache<ZoneDeCorrespondance[]>(epochMs);
+  const lieuCache = createReferentialCache<Lieu[]>(epochMs);
   let snapshotState:
     | { messages: InfoTraficMessage[]; updatedAt: Date; stale: boolean }
     | undefined;
@@ -480,6 +501,79 @@ export function createApplication(deps: {
       }
       return { status: "ok", groups, source: SOURCE };
     },
+
+    async itineraire(
+      depart: string,
+      arrivee: string,
+      options?: { horaire?: string; sens?: string },
+    ): Promise<ItineraireResult> {
+      const parsedDepart = parseLieuEnd(depart);
+      if (parsedDepart.kind === "empty") {
+        return notFoundLieu("Aucun Lieu de départ correspondant");
+      }
+      if (parsedDepart.kind === "invalid_coords") {
+        return notFoundLieu("Coordonnées invalides (départ)");
+      }
+      const parsedArrivee = parseLieuEnd(arrivee);
+      if (parsedArrivee.kind === "empty") {
+        return notFoundLieu("Aucun Lieu d'arrivée correspondant");
+      }
+      if (parsedArrivee.kind === "invalid_coords") {
+        return notFoundLieu("Coordonnées invalides (arrivée)");
+      }
+      if (options?.sens !== undefined && options.sens !== "depart" && options.sens !== "arrivee") {
+        return notFoundLieu("Sens invalide");
+      }
+      const horaire = parseHoraire(options?.horaire, clock.now());
+      if (horaire === "invalid") {
+        return notFoundLieu("Horaire invalide");
+      }
+      const sens = options?.sens === "arrivee" ? "arrivee" : "depart";
+
+      let departMatches: Lieu[];
+      let arriveeMatches: Lieu[];
+      try {
+        [departMatches, arriveeMatches] = await Promise.all([
+          resolveLieuEnd(parsedDepart, lieuCache, itineraires, maxCandidates),
+          resolveLieuEnd(parsedArrivee, lieuCache, itineraires, maxCandidates),
+        ]);
+      } catch {
+        throw new LookupUnavailableError();
+      }
+
+      if (departMatches.length === 0) {
+        return notFoundLieu("Aucun Lieu de départ correspondant");
+      }
+      if (arriveeMatches.length === 0) {
+        return notFoundLieu("Aucun Lieu d'arrivée correspondant");
+      }
+      if (departMatches.length > 1 || arriveeMatches.length > 1) {
+        return {
+          status: "needs_clarification",
+          depart: clarificationSide(departMatches, maxCandidates),
+          arrivee: clarificationSide(arriveeMatches, maxCandidates),
+          source: SOURCE,
+        };
+      }
+
+      let calculation: CalculItineraire;
+      try {
+        calculation = await itineraires.plan({
+          depart: departMatches[0]!,
+          arrivee: arriveeMatches[0]!,
+          horaire,
+          sens,
+          count: DEFAULT_MAX_ITINERAIRES,
+        });
+      } catch {
+        return {
+          status: "error",
+          message: "Impossible de calculer l'Itinéraire",
+          source: SOURCE,
+        };
+      }
+      return toItineraireResult(calculation);
+    },
   };
 
   return app;
@@ -494,6 +588,7 @@ export type Config = {
   maxCandidates: number;
   maxPassagesPerGroup: number;
   maxPassages: number;
+  primFetchTimeoutMs: number;
 };
 
 export type BootResult =
@@ -586,6 +681,17 @@ export function boot(env: NodeJS.ProcessEnv): BootResult {
       message: "MAX_PASSAGES must be a positive integer",
     };
   }
+  const primFetchTimeoutMs = parsePositiveInteger(
+    env.PRIM_FETCH_TIMEOUT_MS,
+    DEFAULT_PRIM_FETCH_TIMEOUT_MS,
+  );
+  if (primFetchTimeoutMs === undefined) {
+    return {
+      ok: false,
+      exitCode: 1,
+      message: "PRIM_FETCH_TIMEOUT_MS must be a positive integer",
+    };
+  }
   return {
     ok: true,
     config: {
@@ -595,6 +701,135 @@ export function boot(env: NodeJS.ProcessEnv): BootResult {
       maxCandidates,
       maxPassagesPerGroup,
       maxPassages,
+      primFetchTimeoutMs,
     },
   };
+}
+
+const COORD_RE = /^(-?\d+(?:\.\d+)?);(-?\d+(?:\.\d+)?)$/;
+const HORAIRE_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+type ParsedLieuEnd =
+  | { kind: "empty" }
+  | { kind: "invalid_coords" }
+  | { kind: "coords"; lieu: Lieu }
+  | { kind: "query"; query: string };
+
+function parseLieuEnd(raw: string): ParsedLieuEnd {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return { kind: "empty" };
+  }
+  if (trimmed.includes(";")) {
+    const match = COORD_RE.exec(trimmed);
+    if (!match) {
+      return { kind: "invalid_coords" };
+    }
+    const lon = Number(match[1]);
+    const lat = Number(match[2]);
+    if (
+      !Number.isFinite(lon) ||
+      !Number.isFinite(lat) ||
+      lon < -180 ||
+      lon > 180 ||
+      lat < -90 ||
+      lat > 90
+    ) {
+      return { kind: "invalid_coords" };
+    }
+    return {
+      kind: "coords",
+      lieu: { id: trimmed, label: trimmed, genre: "coordonnees" },
+    };
+  }
+  const query = normalizeStopQuery(trimmed);
+  if (!query) {
+    return { kind: "empty" };
+  }
+  return { kind: "query", query };
+}
+
+function parseHoraire(
+  value: string | undefined,
+  fallback: Date,
+): Date | "invalid" {
+  if (value === undefined) {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  if (!HORAIRE_RE.test(trimmed)) {
+    return "invalid";
+  }
+  const date = new Date(trimmed);
+  return Number.isNaN(date.getTime()) ? "invalid" : date;
+}
+
+async function resolveLieuEnd(
+  parsed: Exclude<ParsedLieuEnd, { kind: "empty" } | { kind: "invalid_coords" }>,
+  cache: ReferentialCache<Lieu[]>,
+  itineraires: ItinerairePlanning,
+  maxCandidates: number,
+): Promise<Lieu[]> {
+  if (parsed.kind === "coords") {
+    return [parsed.lieu];
+  }
+  return cachedSearch(cache, parsed.query, () =>
+    itineraires.searchLieux(parsed.query, maxCandidates),
+  );
+}
+
+function clarificationSide(
+  matches: Lieu[],
+  maxCandidates: number,
+): { lieu: Lieu } | { candidats: Lieu[] } {
+  if (matches.length === 1 && matches[0]) {
+    return { lieu: toPublicLieu(matches[0]) };
+  }
+  return { candidats: matches.slice(0, maxCandidates).map(toPublicLieu) };
+}
+
+function toPublicLieu(lieu: Lieu): Lieu {
+  return lieu.mode
+    ? {
+        id: lieu.id,
+        label: lieu.label,
+        genre: lieu.genre,
+        mode: lieu.mode,
+      }
+    : { id: lieu.id, label: lieu.label, genre: lieu.genre };
+}
+
+function notFoundLieu(message: string): ItineraireResult {
+  return { status: "not_found", message, source: SOURCE };
+}
+
+function toItineraireResult(calculation: CalculItineraire): ItineraireResult {
+  switch (calculation.kind) {
+    case "ok":
+      return {
+        status: "ok",
+        horaires: "temps_reel",
+        itineraires: calculation.itineraires.slice(0, DEFAULT_MAX_ITINERAIRES),
+        source: SOURCE,
+      };
+    case "aucun":
+      return {
+        status: "ok",
+        horaires: "temps_reel",
+        itineraires: [],
+        summary: "Aucun itinéraire",
+        source: SOURCE,
+      };
+    case "hors_calendrier":
+      return notFoundLieu("Horaire hors calendrier");
+    case "lieu_inconnu":
+      return notFoundLieu("Aucun Lieu correspondant");
+    case "indisponible":
+      return {
+        status: "error",
+        message: "Impossible de calculer l'Itinéraire",
+        source: SOURCE,
+      };
+  }
 }
