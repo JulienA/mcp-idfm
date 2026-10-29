@@ -1,6 +1,6 @@
 # Île-de-France Mobilités MCP
 
-Vocabulary for traffic messages and next departures on the Île-de-France network, as exposed to MCP callers.
+Vocabulary for traffic messages, next departures, and itineraries on the Île-de-France network, as exposed to MCP callers.
 
 ## Language
 
@@ -31,3 +31,27 @@ _Avoid_: priority, level, status
 **Statut de passage**:
 Whether a Prochain Passage is on time, early, delayed, cancelled, or already arrived/departed.
 _Avoid_: state, freshness
+
+**Itinéraire**:
+A calculated trip from one Lieu to another, with Navitia realtime path-building and a sequence of Étapes.
+_Avoid_: journey, isochrone, Prochain Passage
+
+**Lieu**:
+A departure or arrival for an Itinéraire: a Zone d'arrêt, a street address, or longitude;latitude.
+_Avoid_: place, stop_area, stop_point, POI as a word for all of them
+
+**Étape**:
+One walk, one wait, or one ride on a Ligne inside an Itinéraire.
+_Avoid_: section, leg
+
+**Changement**:
+How many times an Itinéraire changes Ligne. A count on the Itinéraire, not a place.
+_Avoid_: Zone de correspondance, transfer
+
+**Effet d'itinéraire**:
+The actual realtime effect on the pick-up and drop-off this Itinéraire uses: no service, modified service, or delays. Other disruptions attached to the same trip do not change this value.
+_Avoid_: journey.status, NO_SERVICE, Statut de passage, Sévérité, MCP status
+
+**Perturbation d'itinéraire**:
+A disruption message that impacts a ride Étape of this Itinéraire.
+_Avoid_: the whole disruptions dump, Info Trafic as a synonym for this list
