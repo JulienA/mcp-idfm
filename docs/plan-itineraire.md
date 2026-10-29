@@ -2,7 +2,7 @@
 
 Plan d'implémentation, pas le code. Décision de forme d'abord, puis ce que l'agent d'implémentation doit construire, dans cet ordre.
 
-**Décision.** Un seul outil MCP, `itineraire` (titre **Itinéraire**). Il résout les deux extrémités (Zone d'arrêt, adresse ou `longitude;latitude`) puis appelle `GET /marketplace/v2/navitia/journeys` avec `data_freshness=realtime`. Le calcul **prend les perturbations en compte** pour construire le chemin. Ça ne remplace pas `prochain_passage` (SIRI à une Zone de correspondance) ni `get_info_trafic` (texte des messages). Spec : `.scratch/itineraire/spec.md`. ADR : `docs/adr/0004-itineraire.md`.
+**Décision.** Un seul outil MCP, `itineraire` (titre **Itinéraire**). Il résout les deux extrémités (Zone d'arrêt, adresse ou `longitude;latitude`) puis appelle `GET /marketplace/v2/navitia/journeys` avec `data_freshness=realtime`. Le calcul **prend les perturbations en compte** pour construire le chemin. L'Itinéraire expose l'**effet** Navitia sur ses montées/descentes (`journey.status`) et les messages **qui impactent ce trajet** (`display_informations.links`). Ça ne remplace pas `prochain_passage` (SIRI). `get_info_trafic` reste disponible pour le fil d'une Ligne entière. Spec : `.scratch/itineraire/spec.md`. ADR : `docs/adr/0004-itineraire.md`.
 
 ## Décisions Julien (29 oct. 2026, Europe/Paris)
 
@@ -14,8 +14,9 @@ Plan d'implémentation, pas le code. Décision de forme d'abord, puis ce que l'a
 | Timeout | **Global 50 s**, env `PRIM_FETCH_TIMEOUT_MS` (défaut 50000). Tous les appels `primRequest` (lookup, traffic_reports, SIRI, journeys). |
 | Nom | **Itinéraire** — identifiant d'outil `itineraire` (ASCII, comme `prochain_passage`). |
 | Spec | Nouveau slug `.scratch/itineraire/`. |
-
-Ambiguïté 2–5, types de lieux (stop + adresse + coordonnées), Info Trafic hors Étapes : inchangés (clarifier, pas d'union ; pas de POI/commune ; l'agent rappelle `get_info_trafic`).
+| Ambiguïté 2–5 | **Clarifier.** Pas d'union, pas de produit cartésien. |
+| POI / commune | **Plus tard.** v1 = Zone d'arrêt + adresse + `lon;lat`. |
+| Perturbations | **Depuis `/journeys`**, pas le snapshot Info Trafic. `journey.status` (effet sur les montées/descentes utilisées) + messages liés via `sections[].display_informations.links[]`. Le reste de `disruptions[]` (arrêts intermédiaires, etc.) est ignoré. |
 
 Ce document reste le contrat d'implémentation. Le palier 0 live n'est pas vert **dans cette VM**. Spec, ADR et glossaire du palier 1 sont écrits.
 
@@ -32,7 +33,7 @@ Deux formes ont été dessinées.
 
 **Base : A.** C'est le plus petit diff qui répond à « comment aller de X à Y » sans forcer l'agent à enchaîner deux outils. Les outils métier v1 résolvent déjà le texte eux-mêmes (spec v1, stories 3 et 6). Un second outil de géocodage casse cette habitude et déplace la règle « ne pas faire le produit cartésien » dans l'agent.
 
-**Greffé de B.** Marquer `horaires: "temps_reel"` sur chaque succès. Mapper les `error.id` Navitia (`no_solution`, `date_out_of_bounds`). Enregistrer des fixtures live avant d'écrire le parser. Chaîner les Étapes vers `prochain_passage` / `get_info_trafic` via les ids canoniques (`Cxxxxx`, id numérique de Zone d'arrêt). `disable_geojson=true`. `first_section_mode[]=walking` et `last_section_mode[]=walking`. Pas de `traveler_type`.
+**Greffé de B.** Marquer `horaires: "temps_reel"` sur chaque succès. Mapper les `error.id` Navitia (`no_solution`, `date_out_of_bounds`). Enregistrer des fixtures live avant d'écrire le parser. Chaîner les Étapes vers `prochain_passage` via l'id de Zone d'arrêt. Perturbations **du trajet** depuis `/journeys` (pas le snapshot). `disable_geojson=true`. `first_section_mode[]=walking` et `last_section_mode[]=walking`. Pas de `traveler_type`.
 
 **Rejeté de B pour v1.** Second outil MCP, `geo:lat,lon` (Navitia parle `lon;lat`), `eviter_modes`, `accessible`, POI/commune, bbox Île-de-France, déplacement de `cachedSearch` / `normalizeStopQuery`.
 
@@ -43,6 +44,8 @@ Deux formes ont été dessinées.
 - Horaires théoriques présentés comme Prochain Passage (ADR 0002).
 - Grain Zone de correspondance (ADR 0003) : un Itinéraire part d'un **Lieu** Navitia, pas d'un `MonitoringRef` SIRI.
 - Tarifs, polylines, listes d'arrêts intermédiaires, vélo/voiture/BSS, fauteuil, via.
+- POI / commune (plus tard).
+- Dumper tout le tableau `disruptions[]` de `/journeys` (seulement celles liées aux sections utilisées, plus `journey.status`).
 - Polling. Cache des Itinéraires. Seconde clé API. Second client HTTP.
 - Timeout 10 s figé (remplacé par 50 s configurable — ça **modifie** `primRequest` pour les quatre outils existants).
 
@@ -203,7 +206,11 @@ Chaque section, `type` :
 
 Datetimes Navitia : `YYYYMMDDTHHMMSS` = heure murale du coverage. Convertir via Europe/Paris vers ISO 8601 (`formatIsoParis`), comme `navitiaDateToIso` dans `prim-traffic-reports.ts` (helper privé : **dupliquer** dans le nouvel adapter, ne pas l'exporter du trafic).
 
-Disruptions : avec `realtime`, Navitia évite ou retarde les courses touchées quand le flux le permet. `journey.status` peut être `NO_SERVICE`, `SIGNIFICANT_DELAYS`, `MODIFIED_SERVICE`. On **n'attache pas** le texte Info Trafic aux Étapes. L'agent enchaîne `get_info_trafic` avec le `Cxxxxx`. On pose `horaires: "temps_reel"` et la description d'outil dit que ce n'est pas un Prochain Passage SIRI.
+Perturbations — [doc Navitia `/journeys`](https://doc.navitia.io/#journeys), à respecter **à la lettre** :
+
+- `journey.status` = effet réel sur les **montées et descentes utilisées par cet Itinéraire**, indépendamment des autres disruptions du payload. Valeurs : `NO_SERVICE` (horaire de montée/descente supprimé en temps réel), `MODIFIED_SERVICE` (horaire ajouté en temps réel), `SIGNIFICANT_DELAYS` (avance ou retard), vide = rien. Mapper vers `effet` : `aucun_service` / `service_modifie` / `retards` ; omettre le champ si vide. Ne pas confondre avec la Sévérité d'un message Info Trafic, ni avec le `status` MCP (`ok` / `not_found`).
+- Les disruptions vivent sur les sections. Celles **qui impactent** le trajet sont dans `sections[].display_informations.links[]` (ids vers `disruptions[]` racine). Les joindre, en extraire titre / texte / Sévérité (même `toSeverite` que Info Trafic), et les poser sur l'Étape `ligne` correspondante (`perturbations`).
+- Une disruption seulement dans `disruptions[]` (arrêt intermédiaire, etc.) **n'est pas** recopiée. Pas de second appel au snapshot Info Trafic. `get_info_trafic` reste l'outil du fil **d'une Ligne**, pas le détail de ce trajet.
 
 Erreurs Navitia documentées en HTTP 404 + `error.id` (à pinner par fixture PRIM, le statut exact n'est pas dans ce dépôt) :
 
@@ -281,6 +288,14 @@ type LieuPublic = {
   mode?: string; // seulement Zone d'arrêt
 };
 
+type EffetItineraire = "aucun_service" | "service_modifie" | "retards";
+
+type PerturbationItineraire = {
+  title: string;
+  text: string;
+  severite: "bloquant" | "perturbé" | "information";
+};
+
 type EtapeItineraire =
   | { genre: "marche"; duree_secondes: number; de: string; vers: string }
   | { genre: "attente"; duree_secondes: number; lieu: string }
@@ -292,6 +307,7 @@ type EtapeItineraire =
       vers: string;
       depart: string;  // ISO Paris
       arrivee: string;
+      perturbations?: PerturbationItineraire[]; // seulement display_informations.links
     };
 
 type Itineraire = {
@@ -299,6 +315,7 @@ type Itineraire = {
   arrivee: string;
   duree_secondes: number;
   changements: number; // nb_transfers Navitia, ne pas recompter les Étapes
+  effet?: EffetItineraire; // journey.status ; omis si vide
   etapes: EtapeItineraire[];
 };
 
@@ -324,7 +341,7 @@ type ItineraireResult =
     };
 ```
 
-Aucun nom Navitia sur cette surface : pas de `journey`, `section`, `embedded_type`, `datetime_represents`, `display_informations`, `geojson`, URI `line:` / `stop_area:` / `address:`.
+Aucun nom Navitia sur cette surface : pas de `journey`, `section`, `embedded_type`, `datetime_represents`, `display_informations`, `geojson`, URI `line:` / `stop_area:` / `address:`, ni `NO_SERVICE` brut (passé par `effet`).
 
 ### Signatures internes (sketch, bodies `not implemented`)
 
@@ -371,12 +388,14 @@ itineraire(
 
 Nouvel adapter `createPrimItineraire({ apiKey, fetch?, log? })` dans `src/infra/prim-itineraire.ts`. Il **ne** touche **pas** `prim-navitia-lookup.ts`. `src/index.ts` le passe avec la même `apiKey`.
 
-### Termes de glossaire à ajouter à l'implémentation (pas dans ce diff)
+### Termes de glossaire (dans `GLOSSARY.md`)
 
 - **Itinéraire** : trajet calculé d'un Lieu à un autre, chemin Navitia temps réel, suite d'Étapes. _Avoid_: journey, isochrone, Prochain Passage.
 - **Lieu** : départ ou arrivée : Zone d'arrêt, adresse, ou `longitude;latitude`. _Avoid_: place, stop_point, POI comme mot pour tout.
 - **Étape** : une marche, une attente, ou un trajet sur une Ligne. _Avoid_: section, leg.
 - **Changement** : nombre de correspondances d'un Itinéraire. _Avoid_: Zone de correspondance.
+- **Effet d'itinéraire** : effet réel sur les montées/descentes utilisées (`aucun_service` / `service_modifie` / `retards`). _Avoid_: journey.status, NO_SERVICE, Statut de passage, Sévérité.
+- **Perturbation d'itinéraire** : message qui impacte une Étape `ligne` de ce trajet. _Avoid_: dump de `disruptions[]`, Info Trafic comme synonyme.
 
 ### Usage agent
 
@@ -490,6 +509,7 @@ Seam HTTP : smoke additif (`tools/list` contient `itineraire`, instructions ment
 12. `plan` `hors_calendrier` → `not_found` « Horaire hors calendrier ».
 13. Même texte dans les 24 h → un `searchLieux`, deux `plan`. Après 24 h, recherche à nouveau. Le calcul n'est jamais servi du cache.
 14. Rappel clarification (id numérique + `lon;lat`) → un `plan`.
+15. Fake `plan` avec `effet: "retards"` et `perturbations` sur une Étape `ligne` → recopiés sur le payload MCP.
 
 Valeurs attendues : littéraux (Châtelet, `C01373`, durées en secondes), pas un recomput du mapper.
 
@@ -501,6 +521,8 @@ Valeurs attendues : littéraux (Châtelet, `C01373`, durées en secondes), pas u
 - Ligne sans `Cxxxxx` → `id: ""` (ne pas recopier l'URI).
 - `no_solution` / `date_out_of_bounds` / 500 → les trois `kind`.
 - Pas de `geojson` dans l'Étape retournée.
+- `journey.status` `NO_SERVICE` → `effet: "aucun_service"` ; `MODIFIED_SERVICE` → `service_modifie` ; `SIGNIFICANT_DELAYS` → `retards` ; vide → champ absent.
+- Disruption dans `display_informations.links` → `perturbations` sur l'Étape `ligne` ; disruption seulement dans le tableau racine → absente.
 
 ### Appel réel
 
@@ -531,8 +553,8 @@ GET §4 avec `data_freshness=realtime`. Critère : statut 200 (éventuellement `
 ### Palier 1 — Spec et ADR — **fait**
 
 - `.scratch/itineraire/spec.md` (`Status: ready-for-agent`).
-- `docs/adr/0004-itineraire.md` : realtime, un outil, timeout 50 s configurable, pas d'union 2–5.
-- Entrées glossaire.
+- `docs/adr/0004-itineraire.md` : realtime, un outil, timeout 50 s configurable, pas d'union 2–5, perturbations = `journey.status` + `display_informations.links`.
+- Entrées glossaire (Itinéraire, Lieu, Étape, Changement, Effet d'itinéraire, Perturbation d'itinéraire).
 
 Critère : ADR + spec lus sans ouvrir le code.
 
@@ -560,7 +582,7 @@ Critère : les cas du palier 3 verts. `identity` / `passages` / `traffic` toujou
 
 ### Palier 5 — Reste des cas application
 
-Cas 2–4, 7–8, 11–14. Critère : fichier de test vert en entier.
+Cas 2–4, 7–8, 11–15. Critère : fichier de test vert en entier.
 
 ### Palier 6 — Timeout global puis adapter
 
@@ -586,11 +608,8 @@ Ordre TDD : timeout (6a) peut partir tout de suite (pas de clé). 3 → 4 → 5 
 
 ## 8. Questions encore ouvertes
 
-Tranché par Julien : fraîcheur (`realtime`), quota (déjà augmenté), timeout (50 s global configurable), nom (`itineraire` / **Itinéraire**), spec (slug `itineraire`).
+Tranché : clarifier (2+), POI/commune plus tard, perturbations = `journey.status` + `display_informations.links` (pas le snapshot).
 
 1. **Accès live.** Au prochain agent avec `PRIM_API_KEY` injectée : le GET §4 rend-il 200, 403, ou 400 sur `realtime` ?
-2. **Ambiguïté 2–5.** Toujours : clarifier, pas d'union. *Dire le contraire si tu veux le premier résultat Navitia.*
-3. **Types de lieux.** Toujours : stop + adresse + `lon;lat`. *POI/commune = plus tard.*
-4. **Info Trafic sur les Étapes.** Toujours : l'agent rappelle `get_info_trafic`. *Dire le contraire pour annoter depuis le snapshot.*
 
-Pas de code de production dans ce diff (spec, ADR, glossaire, plan).
+Pas de code de production dans ce diff.

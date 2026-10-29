@@ -47,3 +47,11 @@ _Avoid_: section, leg
 **Changement**:
 How many times an Itinéraire changes Ligne. A count on the Itinéraire, not a place.
 _Avoid_: Zone de correspondance, transfer
+
+**Effet d'itinéraire**:
+The actual realtime effect on the pick-up and drop-off this Itinéraire uses: no service, modified service, or delays. Other disruptions attached to the same trip do not change this value.
+_Avoid_: journey.status, NO_SERVICE, Statut de passage, Sévérité, MCP status
+
+**Perturbation d'itinéraire**:
+A disruption message that impacts a ride Étape of this Itinéraire.
+_Avoid_: the whole disruptions dump, Info Trafic as a synonym for this list
