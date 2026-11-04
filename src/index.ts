@@ -3,6 +3,7 @@ import { boot, createApplication } from "./application/index.js";
 import { startHttpServer } from "./http.js";
 import { startInfoTraficRefresh } from "./infra/info-trafic-refresh.js";
 import { createLogger } from "./infra/logger.js";
+import { createPrimItineraire } from "./infra/prim-itineraire.js";
 import { createPrimNavitiaLookup } from "./infra/prim-navitia-lookup.js";
 import { createPrimSiriStopMonitoring } from "./infra/prim-siri-stop-monitoring.js";
 import { createPrimTrafficReports } from "./infra/prim-traffic-reports.js";
@@ -35,16 +36,19 @@ log.info(
     maxCandidates: result.config.maxCandidates,
     maxPassagesPerGroup: result.config.maxPassagesPerGroup,
     maxPassages: result.config.maxPassages,
+    primFetchTimeoutMs: result.config.primFetchTimeoutMs,
   },
   "booted",
 );
 
 const apiKey = process.env.PRIM_API_KEY!;
+const timeoutMs = result.config.primFetchTimeoutMs;
 const app = createApplication({
-  lookup: createPrimNavitiaLookup({ apiKey, log }),
+  lookup: createPrimNavitiaLookup({ apiKey, log, timeoutMs }),
   correspondances: createPrimZoneCorrespondanceLookup({ log }),
-  snapshot: createPrimTrafficReports({ apiKey, log }),
-  stopMonitoring: createPrimSiriStopMonitoring({ apiKey, log }),
+  snapshot: createPrimTrafficReports({ apiKey, log, timeoutMs }),
+  stopMonitoring: createPrimSiriStopMonitoring({ apiKey, log, timeoutMs }),
+  itineraires: createPrimItineraire({ apiKey, log, timeoutMs }),
   maxCandidates: result.config.maxCandidates,
   maxPassagesPerGroup: result.config.maxPassagesPerGroup,
   maxPassages: result.config.maxPassages,

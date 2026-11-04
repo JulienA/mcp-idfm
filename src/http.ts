@@ -35,6 +35,7 @@ function toolSummary(result: unknown): Record<string, unknown> {
     candidates?: unknown[];
     messages?: unknown[];
     groups?: unknown[];
+    itineraires?: unknown[];
     stale?: unknown;
     summary?: unknown;
   };
@@ -45,6 +46,9 @@ function toolSummary(result: unknown): Record<string, unknown> {
     ...(value.candidates ? { candidates: value.candidates.length } : {}),
     ...(value.messages ? { messages: value.messages.length } : {}),
     ...(value.groups ? { groups: value.groups.length } : {}),
+    ...(Array.isArray(value.itineraires)
+      ? { itineraires: value.itineraires.length }
+      : {}),
     ...(value.stale !== undefined ? { stale: value.stale } : {}),
     ...(typeof value.summary === "string" ? { summary: value.summary } : {}),
   };
@@ -103,6 +107,7 @@ const MCP_INSTRUCTIONS = [
   'Perturbations, incident, travaux, Info Trafic : appelle get_info_trafic avec le nom de la Ligne (ex. "RER A"). N\'appelle pas get_line_id avant.',
   "get_line_id et get_stop_id servent seulement à afficher un identifiant canonique.",
   "Si un outil répond needs_clarification, présente tous les candidats (id, label, mode) à l'utilisateur, sans en omettre.",
+  "Questions d'itinéraire (comment aller de X à Y) : appelle itineraire directement — Itinéraire Navitia en temps réel, pas un Prochain Passage ; get_stop_id n'est pas un prérequis ; une clarification est un succès, montre tous les candidats des deux côtés puis rappelle une fois.",
 ].join(" ");
 
 const TOOL_ANNOTATIONS = {
@@ -215,6 +220,60 @@ function registerTools(
         query,
         ...(ligne ? { ligne } : {}),
       }),
+  );
+
+  mcpServer.registerTool(
+    "itineraire",
+    {
+      title: "Itinéraire",
+      description:
+        "À appeler pour un Itinéraire en Île-de-France (comment aller de X à Y). Passe le départ et l'arrivée : Zone d'arrêt, adresse, ou longitude;latitude. Le calcul Navitia prend les perturbations en compte (temps réel) ; ce n'est pas un Prochain Passage SIRI. N'appelle pas get_stop_id avant. Une clarification est un succès : montre tous les candidats des deux côtés, puis rappelle une fois.",
+      annotations: TOOL_ANNOTATIONS,
+      inputSchema: fromJsonSchema<{
+        depart: string;
+        arrivee: string;
+        horaire?: string;
+        sens?: "depart" | "arrivee";
+      }>({
+        type: "object",
+        properties: {
+          depart: {
+            type: "string",
+            description:
+              'Départ : nom ou id de Zone d\'arrêt, adresse, ou "longitude;latitude" (ex. "Nation", "10 Rue de Rivoli, Paris", "2.2945;48.8584")',
+          },
+          arrivee: {
+            type: "string",
+            description:
+              'Arrivée : nom ou id de Zone d\'arrêt, adresse, ou "longitude;latitude"',
+          },
+          horaire: {
+            type: "string",
+            description:
+              "Instant ISO 8601 avec fuseau (ex. 2026-10-29T18:30:00+01:00). Absent = maintenant.",
+          },
+          sens: {
+            type: "string",
+            enum: ["depart", "arrivee"],
+            description:
+              'depart = partir après l\'horaire (défaut). arrivee = arriver avant l\'horaire.',
+          },
+        },
+        required: ["depart", "arrivee"],
+      }),
+    },
+    async ({ depart, arrivee, horaire, sens }) =>
+      toolResult(
+        () => app.itineraire(depart, arrivee, { horaire, sens }),
+        log,
+        "itineraire",
+        {
+          depart,
+          arrivee,
+          ...(horaire ? { horaire } : {}),
+          ...(sens ? { sens } : {}),
+        },
+      ),
   );
 }
 
