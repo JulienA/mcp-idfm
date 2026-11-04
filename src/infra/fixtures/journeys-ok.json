@@ -1,0 +1,503 @@
+{
+  "journeys": [
+    {
+      "duration": 904,
+      "nb_transfers": 1,
+      "departure_date_time": "20261029T171908",
+      "arrival_date_time": "20261029T173412",
+      "status": "",
+      "type": "best",
+      "sections": [
+        {
+          "type": "crow_fly",
+          "mode": "walking",
+          "duration": 0,
+          "departure_date_time": "20261029T171908",
+          "arrival_date_time": "20261029T171908",
+          "from": {
+            "id": "stop_area:IDFM:73641",
+            "name": "Falguière (Paris)",
+            "embedded_type": "stop_area",
+            "stop_area": {
+              "id": "stop_area:IDFM:73641",
+              "name": "Falguière"
+            }
+          },
+          "to": {
+            "id": "stop_point:IDFM:22056",
+            "name": "Falguière (Paris)",
+            "embedded_type": "stop_point",
+            "stop_point": {
+              "id": "stop_point:IDFM:22056",
+              "name": "Falguière",
+              "stop_area": {
+                "id": "stop_area:IDFM:73641",
+                "name": "Falguière"
+              }
+            }
+          },
+          "links": []
+        },
+        {
+          "type": "public_transport",
+          "duration": 56,
+          "departure_date_time": "20261029T171908",
+          "arrival_date_time": "20261029T172004",
+          "from": {
+            "id": "stop_point:IDFM:22056",
+            "name": "Falguière (Paris)",
+            "embedded_type": "stop_point",
+            "stop_point": {
+              "id": "stop_point:IDFM:22056",
+              "name": "Falguière",
+              "stop_area": {
+                "id": "stop_area:IDFM:73641",
+                "name": "Falguière"
+              }
+            }
+          },
+          "to": {
+            "id": "stop_point:IDFM:462980",
+            "name": "Montparnasse Bienvenue (Paris)",
+            "embedded_type": "stop_point",
+            "stop_point": {
+              "id": "stop_point:IDFM:462980",
+              "name": "Montparnasse Bienvenue",
+              "stop_area": {
+                "id": "stop_area:IDFM:71139",
+                "name": "Gare Montparnasse"
+              }
+            }
+          },
+          "display_informations": {
+            "label": "12",
+            "code": "12",
+            "network": "RATP",
+            "direction": "Mairie d'Aubervilliers (Aubervilliers)",
+            "commercial_mode": "Métro",
+            "physical_mode": "Métro",
+            "headsign": "Mairie d'Aubervilliers",
+            "name": "12",
+            "links": [
+              {
+                "id": "stop_area:IDFM:72524",
+                "rel": "terminus",
+                "type": "stop_area",
+                "templated": false,
+                "internal": true
+              },
+              {
+                "id": "fe80345a-17af-4a0b-b519-430be25be469",
+                "rel": "disruptions",
+                "type": "disruption",
+                "templated": false,
+                "internal": true
+              },
+              {
+                "id": "33c8a1c4-eecc-430a-a43b-c3f173aff1d5",
+                "rel": "disruptions",
+                "type": "disruption",
+                "templated": false,
+                "internal": true
+              },
+              {
+                "id": "2909ed4f-c956-4497-8092-50a56e72c082",
+                "rel": "disruptions",
+                "type": "disruption",
+                "templated": false,
+                "internal": true
+              },
+              {
+                "id": "9a0e0c65-393c-407e-9d35-8d5cd544d975",
+                "rel": "disruptions",
+                "type": "disruption",
+                "templated": false,
+                "internal": true
+              },
+              {
+                "id": "b8587ab2-a985-4a0c-ae70-420165b390db",
+                "rel": "disruptions",
+                "type": "disruption",
+                "templated": false,
+                "internal": true
+              }
+            ]
+          },
+          "links": [
+            {
+              "id": "company:IDFM:100",
+              "type": "company"
+            },
+            {
+              "id": "vehicle_journey:IDFM:RATP:COU_RATP_12JOFIGNON_2026_Issy09Vers08-13",
+              "type": "vehicle_journey"
+            },
+            {
+              "id": "line:IDFM:C01382",
+              "type": "line"
+            },
+            {
+              "id": "route:IDFM:stif:local-248805-C01382-2",
+              "type": "route"
+            },
+            {
+              "id": "commercial_mode:Metro",
+              "type": "commercial_mode"
+            },
+            {
+              "id": "physical_mode:Metro",
+              "type": "physical_mode"
+            },
+            {
+              "id": "network:IDFM:Operator_100",
+              "type": "network"
+            },
+            {
+              "id": "ticket_6",
+              "rel": "tickets",
+              "type": "ticket",
+              "templated": false,
+              "internal": true
+            }
+          ]
+        },
+        {
+          "type": "transfer",
+          "mode": "walking",
+          "duration": 108,
+          "departure_date_time": "20261029T172004",
+          "arrival_date_time": "20261029T172152",
+          "from": {
+            "id": "stop_point:IDFM:462980",
+            "name": "Montparnasse Bienvenue (Paris)",
+            "embedded_type": "stop_point",
+            "stop_point": {
+              "id": "stop_point:IDFM:462980",
+              "name": "Montparnasse Bienvenue",
+              "stop_area": {
+                "id": "stop_area:IDFM:71139",
+                "name": "Gare Montparnasse"
+              }
+            }
+          },
+          "to": {
+            "id": "stop_point:IDFM:462996",
+            "name": "Montparnasse Bienvenue (Paris)",
+            "embedded_type": "stop_point",
+            "stop_point": {
+              "id": "stop_point:IDFM:462996",
+              "name": "Montparnasse Bienvenue",
+              "stop_area": {
+                "id": "stop_area:IDFM:71139",
+                "name": "Gare Montparnasse"
+              }
+            }
+          },
+          "links": []
+        },
+        {
+          "type": "waiting",
+          "duration": 234,
+          "departure_date_time": "20261029T172152",
+          "arrival_date_time": "20261029T172546",
+          "links": []
+        },
+        {
+          "type": "public_transport",
+          "duration": 506,
+          "departure_date_time": "20261029T172546",
+          "arrival_date_time": "20261029T173412",
+          "from": {
+            "id": "stop_point:IDFM:462996",
+            "name": "Montparnasse Bienvenue (Paris)",
+            "embedded_type": "stop_point",
+            "stop_point": {
+              "id": "stop_point:IDFM:462996",
+              "name": "Montparnasse Bienvenue",
+              "stop_area": {
+                "id": "stop_area:IDFM:71139",
+                "name": "Gare Montparnasse"
+              }
+            }
+          },
+          "to": {
+            "id": "stop_point:IDFM:463158",
+            "name": "Châtelet (Paris)",
+            "embedded_type": "stop_point",
+            "stop_point": {
+              "id": "stop_point:IDFM:463158",
+              "name": "Châtelet",
+              "stop_area": {
+                "id": "stop_area:IDFM:71264",
+                "name": "Châtelet"
+              }
+            }
+          },
+          "display_informations": {
+            "label": "4",
+            "code": "4",
+            "network": "RATP",
+            "direction": "Porte de Clignancourt (Paris)",
+            "commercial_mode": "Métro",
+            "physical_mode": "Métro",
+            "headsign": "Porte de Clignancourt",
+            "name": "4",
+            "links": [
+              {
+                "id": "stop_area:IDFM:478883",
+                "rel": "terminus",
+                "type": "stop_area",
+                "templated": false,
+                "internal": true
+              },
+              {
+                "id": "b8587ab2-a985-4a0c-ae70-420165b390db",
+                "rel": "disruptions",
+                "type": "disruption",
+                "templated": false,
+                "internal": true
+              },
+              {
+                "id": "2909ed4f-c956-4497-8092-50a56e72c082",
+                "rel": "disruptions",
+                "type": "disruption",
+                "templated": false,
+                "internal": true
+              },
+              {
+                "id": "9a0e0c65-393c-407e-9d35-8d5cd544d975",
+                "rel": "disruptions",
+                "type": "disruption",
+                "templated": false,
+                "internal": true
+              },
+              {
+                "id": "fe80345a-17af-4a0b-b519-430be25be469",
+                "rel": "disruptions",
+                "type": "disruption",
+                "templated": false,
+                "internal": true
+              },
+              {
+                "id": "33c8a1c4-eecc-430a-a43b-c3f173aff1d5",
+                "rel": "disruptions",
+                "type": "disruption",
+                "templated": false,
+                "internal": true
+              }
+            ]
+          },
+          "links": [
+            {
+              "id": "company:IDFM:100",
+              "type": "company"
+            },
+            {
+              "id": "vehicle_journey:IDFM:RATP:COU_RATP_04JOELBERT2_2026_Orle05Bagl18-15",
+              "type": "vehicle_journey"
+            },
+            {
+              "id": "line:IDFM:C01374",
+              "type": "line"
+            },
+            {
+              "id": "route:IDFM:stif:local-251124-C01374-4",
+              "type": "route"
+            },
+            {
+              "id": "commercial_mode:Metro",
+              "type": "commercial_mode"
+            },
+            {
+              "id": "physical_mode:Metro",
+              "type": "physical_mode"
+            },
+            {
+              "id": "network:IDFM:Operator_100",
+              "type": "network"
+            },
+            {
+              "id": "ticket_6",
+              "rel": "tickets",
+              "type": "ticket",
+              "templated": false,
+              "internal": true
+            }
+          ]
+        },
+        {
+          "type": "crow_fly",
+          "mode": "walking",
+          "duration": 0,
+          "departure_date_time": "20261029T173412",
+          "arrival_date_time": "20261029T173412",
+          "from": {
+            "id": "stop_point:IDFM:463158",
+            "name": "Châtelet (Paris)",
+            "embedded_type": "stop_point",
+            "stop_point": {
+              "id": "stop_point:IDFM:463158",
+              "name": "Châtelet",
+              "stop_area": {
+                "id": "stop_area:IDFM:71264",
+                "name": "Châtelet"
+              }
+            }
+          },
+          "to": {
+            "id": "stop_area:IDFM:71264",
+            "name": "Châtelet (Paris)",
+            "embedded_type": "stop_area",
+            "stop_area": {
+              "id": "stop_area:IDFM:71264",
+              "name": "Châtelet"
+            }
+          },
+          "links": []
+        }
+      ]
+    }
+  ],
+  "disruptions": [
+    {
+      "id": "b8587ab2-a985-4a0c-ae70-420165b390db",
+      "disruption_id": "e7c20d12-07d9-4d0f-baca-fa156a1be7b3",
+      "status": "active",
+      "severity": {
+        "name": "perturbée",
+        "effect": "SIGNIFICANT_DELAYS",
+        "color": "#EF662F",
+        "priority": 30
+      },
+      "messages": [
+        {
+          "text": "Montparnasse-Bienvenue Panne ascenseur situé Parking Oceane niveau -1 <> Hall 1 niveau 2, dir. Toutes Directions + TGV",
+          "channel": {
+            "id": "ea77b9e2-7a06-11e8-ab20-005056a47b86",
+            "name": "sms ascenseurs",
+            "content_type": "text/plain",
+            "types": [
+              "sms"
+            ]
+          }
+        },
+        {
+          "text": "Montparnasse-Bienvenue Panne de l'ascenseur situé Parking Oceane niveau -1 <> Hall 1 niveau 2, direction Toutes Directions + TGV",
+          "channel": {
+            "id": "0c0c032e-7a07-11e8-ab20-005056a47b86",
+            "name": "email ascenseur",
+            "content_type": "text/html",
+            "types": [
+              "email"
+            ]
+          }
+        },
+        {
+          "text": "Montparnasse-Bienvenue Panne de l'ascenseur situé Parking Oceane niveau -1 <> Hall 1 niveau 2, direction Toutes Directions + TGV",
+          "channel": {
+            "id": "3ae8df3e-7488-11e8-ac3b-005056a47b86",
+            "name": "moteur",
+            "content_type": "text/html",
+            "types": [
+              "web"
+            ]
+          }
+        },
+        {
+          "text": "Panne d'un ascenseur",
+          "channel": {
+            "id": "d9dbc5a6-7a06-11e8-8b8c-005056a44da2",
+            "name": "titre",
+            "content_type": "text/plain",
+            "types": [
+              "title"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "fe80345a-17af-4a0b-b519-430be25be469",
+      "disruption_id": "4418b57b-a139-4d89-a5f0-52c49d35f1b2",
+      "status": "active",
+      "severity": {
+        "name": "perturbée",
+        "effect": "SIGNIFICANT_DELAYS",
+        "color": "#EF662F",
+        "priority": 30
+      },
+      "messages": [
+        {
+          "text": "Montparnasse-Bienvenue Panne ascenseur situé Parking Oceane niveau -1 <> Hall 1 niveau 2, dir. Toutes Directions + TGV",
+          "channel": {
+            "id": "ea77b9e2-7a06-11e8-ab20-005056a47b86",
+            "name": "sms ascenseurs",
+            "content_type": "text/plain",
+            "types": [
+              "sms"
+            ]
+          }
+        },
+        {
+          "text": "Montparnasse-Bienvenue Panne de l'ascenseur situé Parking Oceane niveau -1 <> Hall 1 niveau 2, direction Toutes Directions + TGV",
+          "channel": {
+            "id": "0c0c032e-7a07-11e8-ab20-005056a47b86",
+            "name": "email ascenseur",
+            "content_type": "text/html",
+            "types": [
+              "email"
+            ]
+          }
+        },
+        {
+          "text": "Panne d'un ascenseur",
+          "channel": {
+            "id": "d9dbc5a6-7a06-11e8-8b8c-005056a44da2",
+            "name": "titre",
+            "content_type": "text/plain",
+            "types": [
+              "title"
+            ]
+          }
+        },
+        {
+          "text": "Montparnasse-Bienvenue Panne de l'ascenseur situé Parking Oceane niveau -1 <> Hall 1 niveau 2, direction Toutes Directions + TGV",
+          "channel": {
+            "id": "3ae8df3e-7488-11e8-ac3b-005056a47b86",
+            "name": "moteur",
+            "content_type": "text/html",
+            "types": [
+              "web"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "root-only-intermediate-stop",
+      "disruption_id": "root-only-intermediate-stop",
+      "status": "active",
+      "severity": {
+        "name": "perturbée",
+        "effect": "SIGNIFICANT_DELAYS"
+      },
+      "messages": [
+        {
+          "text": "Arrêt intermédiaire perturbé",
+          "channel": {
+            "name": "titre",
+            "types": [
+              "title"
+            ]
+          }
+        },
+        {
+          "text": "Ne doit pas apparaître sur l'Itinéraire.",
+          "channel": {
+            "name": "web"
+          }
+        }
+      ]
+    }
+  ]
+}

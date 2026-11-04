@@ -1,7 +1,7 @@
 import { canonicalLineId, type ProchainPassage } from "../domain/index.js";
 import type { Logger } from "./logger.js";
 import { silentLogger } from "./logger.js";
-import { primRequest } from "./prim-fetch.js";
+import { PRIM_FETCH_TIMEOUT_MS, primRequest } from "./prim-fetch.js";
 
 const PRIM_STOP_MONITORING =
   "https://prim.iledefrance-mobilites.fr/marketplace/stop-monitoring";
@@ -10,6 +10,7 @@ type PrimSiriStopMonitoringOptions = {
   apiKey: string;
   fetch?: typeof fetch;
   log?: Logger;
+  timeoutMs?: number;
 };
 
 function asArray<T>(value: T | T[] | undefined | null): T[] {
@@ -96,12 +97,19 @@ export function createPrimSiriStopMonitoring(
 ): { getPassages(monitoringRef: string): Promise<ProchainPassage[]> } {
   const fetchFn = options.fetch ?? fetch;
   const log = options.log ?? silentLogger;
+  const timeoutMs = options.timeoutMs ?? PRIM_FETCH_TIMEOUT_MS;
 
   return {
     async getPassages(monitoringRef) {
       const url = new URL(PRIM_STOP_MONITORING);
       url.searchParams.set("MonitoringRef", monitoringRef);
-      const response = await primRequest(url, options.apiKey, fetchFn, log);
+      const response = await primRequest(
+        url,
+        options.apiKey,
+        fetchFn,
+        log,
+        timeoutMs,
+      );
       if (!response.ok) {
         throw new Error(`PRIM SIRI stop-monitoring failed: ${response.status}`);
       }

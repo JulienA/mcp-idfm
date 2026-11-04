@@ -1,0 +1,6 @@
+{
+  "error": {
+    "id": "date_out_of_bounds",
+    "message": "date is not in data production period"
+  }
+}

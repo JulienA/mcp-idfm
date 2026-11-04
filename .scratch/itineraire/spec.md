@@ -101,6 +101,6 @@ One MCP tool, `itineraire` (title **Itinéraire**). It accepts two free-text end
 ## Further Notes
 
 - Glossary: `GLOSSARY.md`. Shape: ADR 0004. PRIM products for passages and Info Trafic: ADR 0002, ADR 0003.
-- Palier 0 (live `/journeys` 200 vs 403) was still unverified in the planning VM: `PRIM_API_KEY` is a Cloud environment secret and is not visible to an already-running agent. The next implementation run that has the variable can record fixtures.
+- Palier 0 is green on the implementation run: live `GET /journeys?...&data_freshness=realtime` returned HTTP 200 with journeys. Fixtures live under `src/infra/fixtures/`.
 - Navitia `realtime` vs SIRI: realtime `/journeys` avoids or retimes disrupted vehicle journeys when the feed allows it, and reports the Effet d'itinéraire on the used pick-up/drop-off. SIRI `stop-monitoring` is the clock at a Zone de correspondance. Both can be true at once; they answer different questions. `get_info_trafic` is the Ligne-wide snapshot, not the trip-level Perturbation d'itinéraire list.
 - Feature slug for tickets: `itineraire`.

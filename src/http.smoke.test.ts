@@ -63,6 +63,9 @@ describe("http adapter", () => {
     expect(body).toContain("jsonrpc");
     expect(body).toContain("instructions");
     expect(body).toContain("prochain_passage");
+    expect(body).toContain("itineraire");
+    expect(body).toContain("Itinéraire");
+    expect(body).toContain("temps réel");
     expect(body).toContain("Châtelet");
     expect(body).toContain("RER A");
     expect(body).toContain("needs_clarification");
@@ -106,6 +109,8 @@ describe("http adapter", () => {
     expect(body).toContain("get_stop_id");
     expect(body).toContain("get_info_trafic");
     expect(body).toContain("prochain_passage");
+    expect(body).toContain("itineraire");
+    expect(body).toContain("Itinéraire");
     expect(body).toContain("Ligne");
     expect(body).toContain("Zone d'arrêt");
     expect(body).toContain("Zone de correspondance");
